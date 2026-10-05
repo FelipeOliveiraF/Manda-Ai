@@ -253,6 +253,7 @@ const page = `<!doctype html>
           const room = Array.isArray(result.data) ? result.data[0] : result.data;
           info.roomName = room.name;
         }
+        info.persistent = true;
         localStorage.setItem('amigos-room-secret:' + info.roomCode,info.password);
         return info;
       }
@@ -399,15 +400,22 @@ const page = `<!doctype html>
         currentRoomCode = info.roomCode; currentRoomName = info.roomName || currentRoomName || ('Sala ' + currentRoomCode); selfName = info.nickname; roomCodeInput.value = currentRoomCode;
         history.replaceState(null,'',location.pathname + '?room=' + encodeURIComponent(currentRoomCode));
         coordinatorId = await roomPeerId(currentRoomCode,info.password);
+        let joinTimeout = null, fallbackAttempted = false;
         enterStage('member'); peer = makePeer(); attachCommonPeerHandlers();
         peer.on('open',() => {
           const conn = peer.connect(coordinatorId,{reliable:true,metadata:{nickname:selfName}}); coordinatorConnection = conn;
-          const timeout = setTimeout(() => { if (!roomConnected) failStage('Sala não encontrada — confira o ID e a senha.'); },9000);
-          conn.on('open',() => { clearTimeout(timeout); roomConnected = true; conn.send({type:'intro',nickname:selfName}); });
+          joinTimeout = setTimeout(() => { if (!roomConnected) failStage('Sala não encontrada — confira o ID e a senha.'); },9000);
+          conn.on('open',() => { clearTimeout(joinTimeout); roomConnected = true; conn.send({type:'intro',nickname:selfName}); });
           conn.on('data',(data) => { if (data?.type === 'roster' && Array.isArray(data.items)) applyRoster(data.items,data.roomName); });
-          conn.on('close',() => { if (!leaving) failStage('A sala foi encerrada por quem criou.'); });
+          conn.on('close',() => { if (!leaving && !fallbackAttempted) failStage('A sala foi encerrada. Entre novamente para reabri-la.'); });
         });
-        peer.on('error',(err) => { if (!roomConnected && err.type === 'peer-unavailable') failStage('Sala não encontrada — confira o ID e a senha.'); else if (!roomConnected) failStage('Não foi possível entrar na sala.'); });
+        peer.on('error',async (err) => {
+          if (!roomConnected && err.type === 'peer-unavailable' && info.persistent && !fallbackAttempted) {
+            fallbackAttempted = true; clearTimeout(joinTimeout); peer.destroy(); peer = null; coordinatorConnection = null;
+            await createRoom(info); mediaNotice('sala permanente reaberta');
+          } else if (!roomConnected && err.type === 'peer-unavailable') failStage('Sala não encontrada — confira o ID e a senha.');
+          else if (!roomConnected) failStage('Não foi possível entrar na sala.');
+        });
       }
 
       function mediaNotice(message) { const before = statusText.textContent; statusText.textContent = '· ' + message; setTimeout(() => { if (statusText.textContent === '· ' + message) statusText.textContent = before; },2800); }
