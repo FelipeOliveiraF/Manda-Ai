@@ -4,10 +4,10 @@ const page = `<!doctype html>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#0b0d12">
-    <meta name="description" content="Compartilhamento de tela rápido e privado para o Grupo dos Amigos.">
+    <meta name="description" content="Mostra aí: salas rápidas com tela, câmera e áudio para compartilhar com amigos.">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icon.svg" type="image/svg+xml">
-    <title>Grupo dos Amigos — Tela</title>
+    <title>Mostra aí — Compartilhe com amigos</title>
     <style>
       :root { color-scheme: dark; --bg:#08090c; --panel:rgba(22,24,31,.82); --line:rgba(255,255,255,.10); --text:#f7f8fb; --muted:#9ea3af; --lime:#c9ff4a; --danger:#ff6477; --shadow:0 28px 80px rgba(0,0,0,.45); }
       * { box-sizing:border-box; }
@@ -22,6 +22,10 @@ const page = `<!doctype html>
       .brand small { margin-left:4px; color:var(--muted); font-weight:500; }
       .secure { display:flex; gap:8px; align-items:center; color:var(--muted); font-size:13px; }
       .secure i { width:7px; height:7px; background:var(--lime); border-radius:50%; box-shadow:0 0 12px var(--lime); }
+      .header-actions { display:flex; align-items:center; gap:10px; }
+      .authbtn { min-height:38px; padding:0 13px; border-radius:11px; color:var(--text); background:#1b1e25; border:1px solid var(--line); cursor:pointer; font-size:12px; font-weight:750; }
+      .userchip { display:none; align-items:center; gap:9px; padding:4px 10px 4px 4px; border-radius:99px; color:var(--text); background:#1b1e25; border:1px solid var(--line); cursor:pointer; }
+      .userchip img,.useravatar { width:29px; height:29px; display:grid; place-items:center; border-radius:50%; object-fit:cover; color:#0b0d0a; background:var(--lime); font-size:11px; font-weight:850; }
       main { min-height:calc(100vh - 78px); display:grid; place-items:center; padding:30px 0 68px; }
       .lobby { width:100%; display:grid; grid-template-columns:1.08fr .92fr; align-items:center; gap:clamp(44px,8vw,116px); }
       .eyebrow { color:var(--lime); font-weight:760; font-size:12px; letter-spacing:.14em; text-transform:uppercase; }
@@ -38,6 +42,7 @@ const page = `<!doctype html>
       .roomline h2 { margin:0; font-size:21px; letter-spacing:-.025em; }
       .pill { padding:7px 10px; border-radius:99px; background:rgba(201,255,74,.08); color:var(--lime); font-size:11px; font-weight:700; white-space:nowrap; }
       .mode-tabs { display:grid; grid-template-columns:1fr 1fr; gap:5px; padding:5px; margin-bottom:22px; border:1px solid var(--line); border-radius:14px; background:rgba(5,6,9,.45); }
+      .mode-tabs.account { grid-template-columns:1fr 1fr 1fr; }
       .tabbtn { min-height:40px; border-radius:10px; color:var(--muted); background:transparent; font-size:13px; font-weight:750; cursor:pointer; }
       .tabbtn.active { color:#0b0d0a; background:var(--lime); box-shadow:0 5px 18px rgba(201,255,74,.12); }
       .fieldhint { margin:7px 2px 0; color:#747985; font-size:11px; line-height:1.4; }
@@ -54,7 +59,24 @@ const page = `<!doctype html>
       .primary { color:#0b0d0a; background:var(--lime); } .primary:hover { background:#d4ff6e; }
       .secondary { color:var(--text); background:#272a33; border:1px solid var(--line); }
       .fine { margin:16px 2px 0; color:#747985; font-size:11px; line-height:1.45; text-align:center; }
+      .save-option { display:none; align-items:flex-start; gap:9px; margin-top:15px; padding:11px 12px; border-radius:11px; color:#c7cad2; background:rgba(201,255,74,.055); border:1px solid rgba(201,255,74,.12); font-size:12px; line-height:1.35; cursor:pointer; }
+      .save-option input { width:16px; height:16px; margin:1px 0 0; padding:0; accent-color:var(--lime); }
+      .rooms-list { display:grid; gap:9px; max-height:330px; overflow:auto; }
+      .saved-room { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:13px; border-radius:13px; background:rgba(5,6,9,.46); border:1px solid var(--line); }
+      .saved-room strong { display:block; margin-bottom:3px; font-size:13px; }
+      .saved-room small { color:var(--muted); letter-spacing:.08em; }
+      .roomopen { min-height:34px; padding:0 11px; border-radius:9px; color:#0b0d0a; background:var(--lime); cursor:pointer; font-size:11px; font-weight:800; }
+      .emptyrooms { padding:28px 16px; color:var(--muted); text-align:center; border:1px dashed var(--line); border-radius:13px; font-size:13px; line-height:1.5; }
       .error { display:none; margin-top:14px; padding:10px 12px; border-radius:10px; color:#ffc6cc; background:rgba(255,100,119,.10); border:1px solid rgba(255,100,119,.2); font-size:12px; }
+      .modalbackdrop { display:none; position:fixed; inset:0; z-index:30; place-items:center; padding:20px; background:rgba(2,3,5,.76); backdrop-filter:blur(12px); }
+      .modal { width:min(430px,100%); padding:28px; border-radius:24px; background:#15171e; border:1px solid var(--line); box-shadow:var(--shadow); }
+      .modalhead { display:flex; justify-content:space-between; gap:18px; align-items:flex-start; }
+      .modal h2 { margin:0 0 7px; font-size:25px; letter-spacing:-.035em; }
+      .modal p { margin:0; color:var(--muted); font-size:13px; line-height:1.5; }
+      .modalclose { width:34px; height:34px; border-radius:10px; color:var(--muted); background:#23262f; cursor:pointer; }
+      .googlebtn { width:100%; min-height:50px; display:flex; align-items:center; justify-content:center; gap:10px; margin-top:24px; border-radius:13px; color:#191b20; background:#fff; cursor:pointer; font-weight:780; }
+      .googlemark { width:20px; height:20px; display:grid; place-items:center; border-radius:50%; color:#4285f4; font-weight:900; }
+      .authnote { margin-top:14px !important; font-size:11px !important; text-align:center; }
       .stage { display:none; width:100%; align-self:stretch; }
       .stagebar { height:62px; display:flex; align-items:center; justify-content:space-between; gap:14px; }
       .stageleft,.stageright { display:flex; align-items:center; gap:11px; }
@@ -89,25 +111,29 @@ const page = `<!doctype html>
       .mediabtn.busy { opacity:.55; pointer-events:none; }
       @keyframes pulse { 50% { opacity:.35; box-shadow:0 0 0 6px rgba(255,100,119,.08); } }
       @keyframes breathe { 50% { transform:scale(1.04); box-shadow:0 0 40px rgba(201,255,74,.08); } }
-      @media (max-width:820px) { .shell{width:min(100% - 22px,620px)} header{height:64px}.brand small,.secure span{display:none} main{min-height:calc(100vh - 64px);padding-top:16px}.lobby{grid-template-columns:1fr;gap:34px}h1{font-size:clamp(44px,14vw,68px)}.hero{text-align:center}.lead{margin-inline:auto}.steps{justify-content:center;flex-wrap:wrap}.card{padding:22px;border-radius:22px}.actions{grid-template-columns:1fr}.stagebar{height:56px}.roomtitle small{display:none}.screen{height:calc(100vh - 205px);min-height:350px;border-radius:15px}.gallery{grid-template-columns:1fr;grid-auto-rows:minmax(240px,1fr)}.people{width:auto;max-width:calc(100% - 28px)}.mediabtn{padding:0 12px}.mediabtn span{display:none} }
+      @media (max-width:820px) { .shell{width:min(100% - 22px,620px)} header{height:64px}.brand small,.secure{display:none}.userchip span{display:none}.userchip{padding-right:4px} main{min-height:calc(100vh - 64px);padding-top:16px}.lobby{grid-template-columns:1fr;gap:34px}h1{font-size:clamp(44px,14vw,68px)}.hero{text-align:center}.lead{margin-inline:auto}.steps{justify-content:center;flex-wrap:wrap}.card{padding:22px;border-radius:22px}.actions{grid-template-columns:1fr}.stagebar{height:56px}.roomtitle small{display:none}.screen{height:calc(100vh - 205px);min-height:350px;border-radius:15px}.gallery{grid-template-columns:1fr;grid-auto-rows:minmax(240px,1fr)}.people{width:auto;max-width:calc(100% - 28px)}.mediabtn{padding:0 12px}.mediabtn span{display:none} }
     </style>
   </head>
   <body>
     <div class="noise"></div>
     <div class="shell">
-      <header><div class="brand"><span class="mark">↗</span> Amigos<span><small>/ tela</small></span></div><div class="secure"><i></i><span>Conexão direta entre amigos</span></div></header>
+      <header><div class="brand"><span class="mark">↗</span> Mostra aí<span><small>/ juntos</small></span></div><div class="header-actions"><div class="secure"><i></i><span>Conexão direta entre amigos</span></div><button class="authbtn" id="loginButton" type="button">Entrar</button><button class="userchip" id="userChip" type="button"><span class="useravatar" id="userAvatar">A</span><span id="userName">Amigo</span></button></div></header>
       <main>
         <section class="lobby" id="lobby">
           <div class="hero"><div class="eyebrow">Um clique. Sem reunião.</div><h1>Mostra aí.<br><span>A gente assiste.</span></h1><p class="lead">Uma sala simples para compartilhar sua tela enquanto todo mundo continua conversando no Discord.</p><div class="steps"><span><b>1</b> Entre na sala</span><span><b>2</b> Compartilhe ou assista</span><span><b>3</b> Pronto</span></div></div>
           <div class="card">
             <div class="roomline"><div><p id="cardEyebrow">Sua transmissão</p><h2 id="cardTitle">Criar uma sala</h2></div><span class="pill">● disponível</span></div>
-            <div class="mode-tabs"><button class="tabbtn active" id="createTab" type="button">Criar sala</button><button class="tabbtn" id="joinTab" type="button">Entrar com ID</button></div>
+            <div class="mode-tabs" id="modeTabs"><button class="tabbtn active" id="createTab" type="button">Criar sala</button><button class="tabbtn" id="joinTab" type="button">Entrar com ID</button><button class="tabbtn hidden" id="roomsTab" type="button">Minhas salas</button></div>
+            <div id="roomForm">
             <label for="nickname">Seu apelido</label><div class="inputwrap"><input id="nickname" maxlength="24" autocomplete="nickname" placeholder="Como vão te ver"></div>
             <div id="createFields"><label for="roomName">Nome da sala</label><div class="inputwrap"><input id="roomName" maxlength="40" value="Grupo dos Amigos" placeholder="Ex.: Grupo dos Amigos"></div><p class="fieldhint">Um ID exclusivo será criado automaticamente.</p></div>
             <div id="joinFields" class="hidden"><label for="roomCodeInput">ID da sala</label><div class="inputwrap"><input id="roomCodeInput" maxlength="12" autocapitalize="characters" placeholder="Ex.: 7KQ2MX"></div><p class="fieldhint">O ID aparece no link enviado por quem criou.</p></div>
             <label for="password">Senha da sala</label><div class="inputwrap"><input id="password" type="password" autocomplete="current-password" placeholder="A senha combinada"><button class="reveal" id="reveal" type="button" aria-label="Mostrar senha">◉</button></div>
+            <label class="save-option" id="saveOption"><input id="saveRoom" type="checkbox" checked><span id="saveOptionText">Salvar esta sala na minha conta e lembrar a senha neste navegador</span></label>
             <div class="actions"><button class="btn primary" id="mainAction" type="button">Criar sala</button></div>
-            <div class="error" id="error" role="alert"></div><p class="fine">Entre primeiro. Depois, cada pessoa escolhe se quer usar tela, câmera ou microfone.</p>
+            </div>
+            <div id="savedRooms" class="hidden"><div class="rooms-list" id="roomsList"></div></div>
+            <div class="error" id="error" role="alert"></div><p class="fine" id="fineText">Entre primeiro. Depois, cada pessoa escolhe se quer usar tela, câmera ou microfone.</p><p class="fine"><a href="/privacy">Privacidade</a> · <a href="/terms">Termos</a></p>
           </div>
         </section>
         <section class="stage" id="stage">
@@ -117,11 +143,17 @@ const page = `<!doctype html>
         </section>
       </main>
     </div>
+    <div class="modalbackdrop" id="authModal"><div class="modal"><div class="modalhead"><div><h2>Entre no Mostra aí</h2><p>Use sua conta Google para criar salas permanentes e encontrá-las em qualquer dispositivo.</p></div><button class="modalclose" id="closeAuth" type="button" aria-label="Fechar">×</button></div><button class="googlebtn" id="googleLogin" type="button"><span class="googlemark">G</span> Continuar com Google</button><p class="authnote" id="authNote">O modo convidado continua disponível sem cadastro.</p></div></div>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
     <script>
       const $ = (selector) => document.querySelector(selector);
       const lobby = $('#lobby'), stage = $('#stage'), gallery = $('#gallery'), waiting = $('#waiting'), errorBox = $('#error'), statusText = $('#status'), nickInput = $('#nickname'), passwordInput = $('#password'), roomNameInput = $('#roomName'), roomCodeInput = $('#roomCodeInput');
+      const SUPABASE_URL = 'https://ahygayqpwhkphjdyrktw.supabase.co';
+      const SUPABASE_KEY = 'sb_publishable_v1XL67mYUlHwkjDva7OsTw_zljnYttq';
+      const supabaseClient = window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
       let peer = null, mode = null, lobbyMode = 'create', currentRoomCode = '', currentRoomName = '', selfName = '', coordinatorId = '', coordinatorConnection = null, roomConnected = false, leaving = false;
+      let currentUser = null, savedRooms = [];
       let cameraTrack = null, microphoneTrack = null, screenTrack = null, screenAudioTracks = [];
       const dataConnections = new Map(), roster = new Map(), outgoingCalls = new Map(), incomingCalls = new Map(), remoteStreams = new Map(), remoteKinds = new Map();
       nickInput.value = localStorage.getItem('amigos-nickname') || '';
@@ -131,13 +163,19 @@ const page = `<!doctype html>
         lobbyMode = next;
         const creating = next === 'create';
         $('#createTab').classList.toggle('active', creating);
-        $('#joinTab').classList.toggle('active', !creating);
+        $('#joinTab').classList.toggle('active', next === 'join');
+        $('#roomsTab').classList.toggle('active', next === 'rooms');
+        $('#roomForm').classList.toggle('hidden', next === 'rooms');
+        $('#savedRooms').classList.toggle('hidden', next !== 'rooms');
         $('#createFields').classList.toggle('hidden', !creating);
-        $('#joinFields').classList.toggle('hidden', creating);
-        $('#cardEyebrow').textContent = creating ? 'Sua sala' : 'Sala de outra pessoa';
-        $('#cardTitle').textContent = creating ? 'Criar uma sala' : 'Entrar em uma sala';
+        $('#joinFields').classList.toggle('hidden', next !== 'join');
+        $('#cardEyebrow').textContent = creating ? 'Sua sala' : next === 'rooms' ? 'Sua conta' : 'Sala de outra pessoa';
+        $('#cardTitle').textContent = creating ? 'Criar uma sala' : next === 'rooms' ? 'Minhas salas' : 'Entrar em uma sala';
         $('#mainAction').textContent = creating ? 'Criar sala' : 'Entrar na sala';
+        $('#saveOptionText').textContent = creating ? 'Criar uma sala permanente e lembrar a senha neste navegador' : 'Salvar esta sala na minha conta e lembrar a senha neste navegador';
+        $('#fineText').textContent = next === 'rooms' ? 'As salas ficam na sua conta. A senha fica somente neste navegador.' : 'Entre primeiro. Depois, cada pessoa escolhe se quer usar tela, câmera ou microfone.';
         errorBox.style.display = 'none';
+        if (next === 'rooms') loadSavedRooms();
       }
 
       function normalizeRoomCode(value) { return value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0,12); }
@@ -146,6 +184,78 @@ const page = `<!doctype html>
       function makePeer(id) { return id ? new Peer(id,{debug:1}) : new Peer({debug:1}); }
       function inviteUrl() { return location.origin + location.pathname + '?room=' + encodeURIComponent(currentRoomCode); }
       function showError(message) { errorBox.textContent = message; errorBox.style.display = 'block'; return null; }
+
+      function userDisplayName(user) { return String(user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'Amigo').slice(0,60); }
+      function renderAuth() {
+        const signedIn = Boolean(currentUser);
+        $('#loginButton').style.display = signedIn ? 'none' : 'block';
+        $('#userChip').style.display = signedIn ? 'flex' : 'none';
+        $('#roomsTab').classList.toggle('hidden',!signedIn);
+        $('#modeTabs').classList.toggle('account',signedIn);
+        $('#saveOption').style.display = signedIn ? 'flex' : 'none';
+        if (signedIn) {
+          const name = userDisplayName(currentUser);
+          $('#userName').textContent = name;
+          $('#userAvatar').textContent = initials(name);
+          const avatarUrl = currentUser.user_metadata?.avatar_url;
+          if (avatarUrl) { $('#userAvatar').style.backgroundImage = 'url(' + encodeURI(String(avatarUrl)) + ')'; $('#userAvatar').style.backgroundSize = 'cover'; $('#userAvatar').textContent = ''; }
+          if (!nickInput.value) nickInput.value = name.slice(0,24);
+        } else if (lobbyMode === 'rooms') setLobbyMode('create');
+      }
+
+      function openAuth() { $('#authModal').style.display = 'grid'; }
+      function closeAuth() { $('#authModal').style.display = 'none'; $('#authNote').textContent = 'O modo convidado continua disponível sem cadastro.'; }
+
+      async function signInWithGoogle() {
+        $('#authNote').textContent = 'Abrindo o Google…';
+        const result = await supabaseClient.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin + location.pathname}});
+        if (result.error) $('#authNote').textContent = 'Não foi possível abrir o login: ' + result.error.message;
+      }
+
+      async function signOut() {
+        await supabaseClient.auth.signOut();
+        currentUser = null; savedRooms = []; renderAuth(); setLobbyMode('create');
+      }
+
+      async function loadSavedRooms() {
+        if (!currentUser) return;
+        const result = await supabaseClient.from('rooms').select('id,code,name,owner_id,created_at').order('created_at',{ascending:false});
+        if (result.error) { showError('Não consegui carregar suas salas agora.'); return; }
+        savedRooms = result.data || [];
+        const list = $('#roomsList'); list.textContent = '';
+        if (!savedRooms.length) { const empty = document.createElement('div'); empty.className = 'emptyrooms'; empty.textContent = 'Você ainda não salvou nenhuma sala. Crie uma ou entre usando um ID.'; list.appendChild(empty); return; }
+        savedRooms.forEach((room) => {
+          const item = document.createElement('div'); item.className = 'saved-room';
+          const info = document.createElement('div'); const title = document.createElement('strong'); const code = document.createElement('small');
+          title.textContent = room.name; code.textContent = room.code; info.append(title,code);
+          const button = document.createElement('button'); button.className = 'roomopen'; button.type = 'button'; button.textContent = 'Entrar'; button.addEventListener('click',() => openSavedRoom(room));
+          item.append(info,button); list.appendChild(item);
+        });
+      }
+
+      function openSavedRoom(room) {
+        setLobbyMode('join'); roomCodeInput.value = room.code; currentRoomName = room.name;
+        passwordInput.value = localStorage.getItem('amigos-room-secret:' + room.code) || '';
+        if (!passwordInput.value) { passwordInput.focus(); showError('Digite a senha desta sala neste dispositivo.'); }
+        else $('#mainAction').focus();
+      }
+
+      async function persistRoom(info) {
+        if (!currentUser || !$('#saveRoom').checked) return info;
+        if (lobbyMode === 'create') {
+          const result = await supabaseClient.rpc('create_room',{room_name:info.roomName});
+          if (result.error) throw new Error('Não foi possível criar a sala permanente.');
+          const room = Array.isArray(result.data) ? result.data[0] : result.data;
+          info.roomCode = room.code; info.roomName = room.name;
+        } else {
+          const result = await supabaseClient.rpc('save_room_by_code',{room_code:info.roomCode});
+          if (result.error) throw new Error('Este ID não pertence a uma sala permanente. Desmarque “Salvar” para entrar como convidado.');
+          const room = Array.isArray(result.data) ? result.data[0] : result.data;
+          info.roomName = room.name;
+        }
+        localStorage.setItem('amigos-room-secret:' + info.roomCode,info.password);
+        return info;
+      }
 
       function validate() {
         const nickname = nickInput.value.trim(), password = passwordInput.value, roomName = roomNameInput.value.trim(), roomCode = normalizeRoomCode(roomCodeInput.value);
@@ -271,7 +381,7 @@ const page = `<!doctype html>
       }
 
       async function createRoom(info) {
-        currentRoomCode = generateRoomCode(); currentRoomName = info.roomName; selfName = info.nickname;
+        currentRoomCode = info.roomCode || generateRoomCode(); currentRoomName = info.roomName; selfName = info.nickname;
         history.replaceState(null,'',location.pathname + '?room=' + encodeURIComponent(currentRoomCode));
         coordinatorId = await roomPeerId(currentRoomCode,info.password);
         enterStage('host'); peer = makePeer(coordinatorId); attachCommonPeerHandlers();
@@ -286,7 +396,7 @@ const page = `<!doctype html>
       }
 
       async function joinRoom(info) {
-        currentRoomCode = info.roomCode; currentRoomName = 'Sala ' + currentRoomCode; selfName = info.nickname; roomCodeInput.value = currentRoomCode;
+        currentRoomCode = info.roomCode; currentRoomName = info.roomName || currentRoomName || ('Sala ' + currentRoomCode); selfName = info.nickname; roomCodeInput.value = currentRoomCode;
         history.replaceState(null,'',location.pathname + '?room=' + encodeURIComponent(currentRoomCode));
         coordinatorId = await roomPeerId(currentRoomCode,info.password);
         enterStage('member'); peer = makePeer(); attachCommonPeerHandlers();
@@ -316,9 +426,21 @@ const page = `<!doctype html>
 
       $('#createTab').addEventListener('click',() => setLobbyMode('create'));
       $('#joinTab').addEventListener('click',() => setLobbyMode('join'));
+      $('#roomsTab').addEventListener('click',() => setLobbyMode('rooms'));
+      $('#loginButton').addEventListener('click',openAuth);
+      $('#closeAuth').addEventListener('click',closeAuth);
+      $('#authModal').addEventListener('click',(event) => { if (event.target === $('#authModal')) closeAuth(); });
+      $('#googleLogin').addEventListener('click',signInWithGoogle);
+      $('#userChip').addEventListener('click',async () => { if (confirm('Sair da sua conta?')) await signOut(); });
       $('#reveal').addEventListener('click',() => { passwordInput.type = passwordInput.type === 'password' ? 'text' : 'password'; });
       roomCodeInput.addEventListener('input',() => { roomCodeInput.value = normalizeRoomCode(roomCodeInput.value); });
-      $('#mainAction').addEventListener('click',async () => { const info = validate(); if (!info) return; if (lobbyMode === 'create') await createRoom(info); else await joinRoom(info); });
+      $('#mainAction').addEventListener('click',async () => {
+        let info = validate(); if (!info) return;
+        const button = $('#mainAction'); button.disabled = true; button.textContent = 'Preparando…';
+        try { info = await persistRoom(info); if (lobbyMode === 'create') await createRoom(info); else await joinRoom(info); }
+        catch (error) { showError(error.message || 'Não foi possível preparar a sala.'); }
+        finally { button.disabled = false; button.textContent = lobbyMode === 'create' ? 'Criar sala' : 'Entrar na sala'; }
+      });
       $('#screenButton').addEventListener('click',toggleScreen); $('#cameraButton').addEventListener('click',toggleCamera); $('#micButton').addEventListener('click',toggleMicrophone);
 
       function failStage(message) { waiting.style.display = 'grid'; $('#waitingTitle').textContent = message; $('#waitingText').textContent = 'Clique em Sair para tentar novamente.'; statusText.textContent = '· desconectado'; }
@@ -331,23 +453,35 @@ const page = `<!doctype html>
 
       const linkedRoom = normalizeRoomCode(new URLSearchParams(location.search).get('room') || '');
       if (linkedRoom) { roomCodeInput.value = linkedRoom; setLobbyMode('join'); }
+      supabaseClient.auth.getSession().then(({data}) => { currentUser = data.session?.user || null; renderAuth(); });
+      supabaseClient.auth.onAuthStateChange((_event,session) => { currentUser = session?.user || null; renderAuth(); if (currentUser) closeAuth(); });
     </script>
   </body>
 </html>`;
 
+function legalPage(title, body) {
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b0d12"><title>${title} — Mostra aí</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#08090c;color:#f7f8fb;font:16px/1.65 Inter,system-ui,sans-serif}main{width:min(760px,calc(100% - 36px));margin:0 auto;padding:64px 0 90px}a{color:#c9ff4a}nav{margin-bottom:48px}h1{font-size:clamp(38px,7vw,62px);line-height:1;letter-spacing:-.05em;margin:0 0 16px}h2{margin-top:38px;font-size:21px}p,li{color:#b9bdc6}small{color:#747985}.box{padding:22px;border:1px solid rgba(255,255,255,.1);border-radius:18px;background:#111319}</style></head><body><main><nav><a href="/">← Voltar ao Mostra aí</a></nav>${body}<p><small>Última atualização: 4 de outubro de 2026.</small></p></main></body></html>`;
+}
+
+const privacyPage = legalPage("Privacidade", `<h1>Política de Privacidade</h1><p>O Mostra aí foi feito para compartilhar tela, câmera e áudio em salas entre amigos, com ou sem conta.</p><h2>Dados da conta</h2><p>Ao entrar com o Google, recebemos seu nome, endereço de e-mail, foto de perfil e identificador da conta. Usamos esses dados somente para identificar seu perfil e salvar as salas das quais você participa.</p><h2>Salas e mídia</h2><p>Guardamos o nome, o ID e a lista de membros das salas permanentes. A senha da sala fica somente no navegador em que foi informada. O áudio, o vídeo e a tela são transmitidos em tempo real entre os participantes por WebRTC e não são gravados pelo Mostra aí.</p><h2>Serviços utilizados</h2><p>Usamos Google para autenticação, Supabase para contas e dados das salas e PeerJS/WebRTC para conexão em tempo real. Esses serviços podem processar dados técnicos necessários ao funcionamento.</p><h2>Seus controles</h2><p>Você escolhe quando liberar tela, câmera e microfone. Pode sair da conta a qualquer momento e solicitar a exclusão do perfil e das salas pelo e-mail <a href="mailto:felu.leo2016@gmail.com">felu.leo2016@gmail.com</a>.</p><h2>Segurança</h2><p>O acesso aos dados é protegido por regras por usuário no banco. Nunca coloque informações sensíveis no nome de uma sala ou compartilhe uma senha com pessoas que não devam entrar.</p>`);
+
+const termsPage = legalPage("Termos", `<h1>Termos de Uso</h1><div class="box"><p>Ao usar o Mostra aí, você concorda em utilizar o serviço de forma legal, respeitosa e somente com pessoas autorizadas.</p></div><h2>Uso permitido</h2><p>Você é responsável pelo conteúdo que compartilha e deve ter autorização para transmitir telas, áudio, vídeo e outros materiais. Não use o serviço para assédio, fraude, invasão de privacidade ou distribuição de conteúdo ilegal.</p><h2>Contas e salas</h2><p>O modo convidado não exige cadastro. Contas Google permitem criar e salvar salas permanentes. Mantenha as senhas das salas em segurança e encerre o acesso quando necessário.</p><h2>Disponibilidade</h2><p>O serviço é fornecido no estado em que se encontra e pode mudar, ficar temporariamente indisponível ou depender de serviços externos e da conexão dos participantes.</p><h2>Privacidade</h2><p>O tratamento de dados está descrito na <a href="/privacy">Política de Privacidade</a>.</p><h2>Contato</h2><p>Dúvidas ou solicitações podem ser enviadas para <a href="mailto:felu.leo2016@gmail.com">felu.leo2016@gmail.com</a>.</p>`);
+
 const icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" rx="30" fill="#c9ff4a"/><path d="M35 87 91 31M50 31h41v41" fill="none" stroke="#0b0d12" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-const manifest = JSON.stringify({ name:"Amigos — Salas de vídeo", short_name:"Amigos", description:"Salas com tela, webcam e áudio para conversar entre amigos.", start_url:"/", display:"standalone", background_color:"#08090c", theme_color:"#0b0d12", icons:[{ src:"/icon.svg",sizes:"any",type:"image/svg+xml",purpose:"any maskable" }] });
-const serviceWorker = `const CACHE='amigos-tela-v3';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['/','/icon.svg','/manifest.webmanifest'])))});self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));self.addEventListener('fetch',e=>{if(e.request.method==='GET'&&new URL(e.request.url).origin===location.origin)e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)))})`;
+const manifest = JSON.stringify({ name:"Mostra aí — Salas entre amigos", short_name:"Mostra aí", description:"Salas com tela, webcam e áudio para conversar entre amigos.", start_url:"/", display:"standalone", background_color:"#08090c", theme_color:"#0b0d12", icons:[{ src:"/icon.svg",sizes:"any",type:"image/svg+xml",purpose:"any maskable" }] });
+const serviceWorker = `const CACHE='mostra-ai-v4';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['/','/icon.svg','/manifest.webmanifest'])))});self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));self.addEventListener('fetch',e=>{if(e.request.method==='GET'&&new URL(e.request.url).origin===location.origin)e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)))})`;
 
 export default {
   async fetch(request) {
     const pathname = new URL(request.url).pathname;
     let body, contentType;
     if (pathname === "/" || pathname === "/index.html") { body = page; contentType = "text/html; charset=utf-8"; }
+    else if (pathname === "/privacy") { body = privacyPage; contentType = "text/html; charset=utf-8"; }
+    else if (pathname === "/terms") { body = termsPage; contentType = "text/html; charset=utf-8"; }
     else if (pathname === "/icon.svg") { body = icon; contentType = "image/svg+xml"; }
     else if (pathname === "/manifest.webmanifest") { body = manifest; contentType = "application/manifest+json"; }
     else if (pathname === "/sw.js") { body = serviceWorker; contentType = "text/javascript; charset=utf-8"; }
     else return new Response("Not found", { status:404 });
-    return new Response(body, { headers:{ "content-type":contentType, "cache-control":pathname === "/" ? "no-cache" : "public, max-age=3600", "referrer-policy":"no-referrer", "x-content-type-options":"nosniff", "permissions-policy":"camera=(), microphone=(), display-capture=(self)" } });
+    return new Response(body, { headers:{ "content-type":contentType, "cache-control":pathname === "/" ? "no-cache" : "public, max-age=3600", "referrer-policy":"no-referrer", "x-content-type-options":"nosniff", "permissions-policy":"camera=(self), microphone=(self), display-capture=(self)" } });
   }
 };
