@@ -8,6 +8,16 @@ export const appScript = String.raw`
   const $ = function (selector) { return document.querySelector(selector); };
 
   let currentUser = null;
+  let ownProfile = null;
+  const photoCache = new Map();
+  const peerUserIds = new Map();
+  const memberProfiles = new Map();
+  let micDevice = localStorage.getItem('mostra-microphone') || '';
+  let cameraDevice = localStorage.getItem('mostra-camera') || '';
+  let previewCamera = null, previewMic = null, meterContext = null, meterFrame = null;
+  let previewGeneration = 0;
+  let profileDraftPhoto, roomDraftPhoto;
+  let modalReturnFocus = null;
   let rooms = [];
   let activeRoom = null;
   let pendingInvite = new URLSearchParams(location.search).get('invite') || '';
@@ -35,10 +45,10 @@ export const appScript = String.raw`
   }
   function userName() {
     const meta = currentUser && currentUser.user_metadata || {};
-    return String(meta.full_name || meta.name || (currentUser && currentUser.email || '').split('@')[0] || 'Amigo').slice(0, 60);
+    return String(ownProfile?.display_name || meta.full_name || meta.name || (currentUser && currentUser.email || '').split('@')[0] || 'Amigo').slice(0, 60);
   }
   function avatarUrl() {
-    return String(currentUser && currentUser.user_metadata && currentUser.user_metadata.avatar_url || '');
+    return String(ownProfile ? ownProfile.avatar_url || '' : currentUser?.user_metadata?.avatar_url || '');
   }
   function escapeText(value) { return String(value == null ? '' : value); }
   function showToast(message) {
@@ -48,11 +58,28 @@ export const appScript = String.raw`
     clearTimeout(showToast.timer);
     showToast.timer = setTimeout(function () { toast.classList.remove('show'); }, 2200);
   }
-  function openModal(id) { $('#' + id).classList.remove('hidden'); }
-  function closeModal(id) { $('#' + id).classList.add('hidden'); }
+  function openModal(id) {
+    modalReturnFocus = document.activeElement;
+    const modal = $('#' + id); modal.classList.remove('hidden');
+    const box = modal.querySelector('.modal'); box.setAttribute('role','dialog'); box.setAttribute('aria-modal','true');
+    box.setAttribute('aria-label', box.querySelector('h2')?.textContent || 'Configurações');
+    (box.querySelector('input:not([type=file]),select,button') || box).focus();
+  }
+  function closeModal(id) {
+    $('#' + id).classList.add('hidden');
+    if (id === 'devicesModal') stopPreviews();
+    modalReturnFocus?.focus();
+  }
   function setAvatar(element, name, url) {
     element.textContent = initials(name);
-    element.style.backgroundImage = url ? 'url("' + encodeURI(url) + '")' : '';
+    element.style.backgroundImage = '';
+    element.dataset.photo = url || '';
+    if (!url) return;
+    resolvePhoto(url).then(function (resolved) {
+      if (element.dataset.photo !== url || !resolved) return;
+      element.style.backgroundImage = 'url(' + JSON.stringify(resolved) + ')';
+      element.textContent = '';
+    }).catch(function () {});
   }
   function setConnection(message, healthy) {
     $('#connectionNote span').textContent = message;
@@ -127,22 +154,22 @@ export const appScript = String.raw`
       list.appendChild(empty);
       return;
     }
-    rooms.forEach(function (room) {
+    rooms.filter(function(room) { return room.name.toLocaleLowerCase('pt-BR').includes($('#roomSearch').value.trim().toLocaleLowerCase('pt-BR')); }).forEach(function (room) {
       const button = document.createElement('button');
       button.className = 'room-item' + (activeRoom && activeRoom.id === room.id ? ' active' : '');
       button.type = 'button';
       const hash = document.createElement('span');
-      hash.className = 'room-hash'; hash.textContent = '#';
+      hash.className = 'room-hash'; setAvatar(hash, room.name, room.avatar_url);
       const copy = document.createElement('span'); copy.className = 'room-item-copy';
       const title = document.createElement('strong'); title.textContent = room.name;
-      const code = document.createElement('small'); code.textContent = room.code;
+      const code = document.createElement('small'); code.textContent = activeRoom?.id === room.id ? 'Na chamada' : 'Sala de conversa';
       copy.append(title, code); button.append(hash, copy);
       button.addEventListener('click', function () { openRoom(room); });
       list.appendChild(button);
     });
   }
   async function loadRooms(preferredId) {
-    const result = await db.from('rooms').select('id,code,name,owner_id,media_key,created_at').order('created_at', { ascending: false });
+    const result = await db.from('rooms').select('id,code,name,owner_id,media_key,avatar_url,created_at').order('created_at', { ascending: false });
     if (result.error) { showToast('Não consegui carregar suas salas.'); return; }
     rooms = result.data || [];
     renderRooms();
@@ -170,9 +197,10 @@ export const appScript = String.raw`
   async function createInvite() {
     if (!activeRoom) return;
     const button = $('#inviteButton');
+    const original = button.innerHTML;
     button.disabled = true; button.textContent = 'Gerando…';
     const result = await db.rpc('create_room_invite', { p_room_id: activeRoom.id });
-    button.disabled = false; button.textContent = 'Convidar';
+    button.disabled = false; button.innerHTML = original;
     if (result.error || !result.data || !result.data.length) { showToast('Não consegui criar o convite.'); return; }
     const link = location.origin + location.pathname + '?invite=' + encodeURIComponent(result.data[0].token);
     $('#inviteLink').value = link;
@@ -193,7 +221,7 @@ export const appScript = String.raw`
   function resetChat() {
     if (chatChannel) db.removeChannel(chatChannel);
     chatChannel = null;
-    $('#messages').innerHTML = '<div class="chat-empty"><span>✦</span><strong>O chat começa aqui</strong><small>As mensagens desta sala aparecem para todos os membros.</small></div>';
+    $('#messages').innerHTML = '<div class="chat-empty"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-1 2V11.5a8.5 8.5 0 0 1 18 0Z"/><path d="M7 9h10M7 13h6"/></svg></span><strong>O chat começa aqui</strong><small>As mensagens desta sala aparecem para todos os membros.</small></div>';
   }
   async function loadMessages() {
     if (!activeRoom) return;
@@ -205,7 +233,7 @@ export const appScript = String.raw`
   function renderMessages(items) {
     const list = $('#messages'); list.textContent = '';
     if (!items.length) {
-      list.innerHTML = '<div class="chat-empty"><span>✦</span><strong>O chat começa aqui</strong><small>Mande a primeira mensagem para a sala.</small></div>';
+      list.innerHTML = '<div class="chat-empty"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-1 2V11.5a8.5 8.5 0 0 1 18 0Z"/><path d="M7 9h10M7 13h6"/></svg></span><strong>O chat começa aqui</strong><small>Mande a primeira mensagem para a sala.</small></div>';
       return;
     }
     items.forEach(function (item) {
@@ -268,7 +296,7 @@ export const appScript = String.raw`
       const label = document.createElement('span'); label.className = 'tile-name';
       const type = document.createElement('span'); type.className = 'tile-kind'; meta.append(label, type); tile.append(avatar, video, meta); $('#mediaGrid').appendChild(tile);
     }
-    tile.querySelector('.tile-avatar span').textContent = initials(name);
+    setAvatar(tile.querySelector('.tile-avatar span'), name, local ? avatarUrl() : memberProfiles.get(peerUserIds.get(peerId))?.avatar_url || '');
     tile.querySelector('.tile-name').textContent = name + (local ? ' (você)' : '');
     tile.querySelector('.tile-kind').textContent = kind === 'screen' ? '· tela' : kind === 'camera' ? '· câmera' : kind === 'audio' ? '· áudio' : '';
     tile.classList.toggle('screen-share', kind === 'screen');
@@ -289,15 +317,17 @@ export const appScript = String.raw`
     $('#participantCount').textContent = roster.size + (roster.size === 1 ? ' online' : ' online');
   }
   function applyRoster(items) {
+    memberProfiles.clear();
     const activeIds = new Set(items.map(function (item) { return item.id; }));
     roster.forEach(function (_, id) {
       if (!activeIds.has(id)) { remoteStreams.delete(id); remoteKinds.delete(id); findTile(id)?.remove(); }
     });
-    roster.clear(); items.forEach(function (item) { roster.set(item.id, String(item.name || 'Amigo').slice(0, 60)); }); renderRoster();
+    roster.clear(); items.forEach(function (item) { roster.set(item.id, String(item.name || 'Amigo').slice(0, 60)); if (item.userId) peerUserIds.set(item.id,item.userId); }); renderRoster();
+    loadMemberProfiles();
     if (outgoingStream().getTracks().length) roster.forEach(function (_, id) { callPeer(id); });
   }
   function broadcastRoster() {
-    const payload = { type: 'roster', items: Array.from(roster, function (entry) { return { id: entry[0], name: entry[1] }; }) };
+    const payload = { type: 'roster', items: Array.from(roster, function (entry) { return { id: entry[0], name: entry[1], userId: peerUserIds.get(entry[0]) }; }) };
     dataConnections.forEach(function (connection) { if (connection.open) connection.send(payload); });
     applyRoster(payload.items);
   }
@@ -328,9 +358,9 @@ export const appScript = String.raw`
     targetPeer.on('disconnected', function () { if (!leaving) setConnection('Reconectando…', false); });
   }
   function becomeCoordinator(targetPeer) {
-    isCoordinator = true; peer = targetPeer; roster.set(peer.id, userName()); setConnection('Sala conectada', true); broadcastRoster();
+    isCoordinator = true; peer = targetPeer; roster.set(peer.id, userName()); peerUserIds.set(peer.id,currentUser.id); setConnection('Sala conectada', true); broadcastRoster();
     peer.on('connection', function (connection) {
-      dataConnections.set(connection.peer, connection);
+      dataConnections.set(connection.peer, connection); if(connection.metadata?.userId) peerUserIds.set(connection.peer,connection.metadata.userId);
       connection.on('open', function () { roster.set(connection.peer, String(connection.metadata && connection.metadata.nickname || 'Amigo').slice(0, 60)); broadcastRoster(); });
       connection.on('data', function (data) { if (data && data.type === 'intro') { roster.set(connection.peer, String(data.nickname || 'Amigo').slice(0, 60)); broadcastRoster(); } });
       connection.on('close', function () { dataConnections.delete(connection.peer); roster.delete(connection.peer); remoteStreams.delete(connection.peer); remoteKinds.delete(connection.peer); broadcastRoster(); });
@@ -340,7 +370,7 @@ export const appScript = String.raw`
     if (leaving || !activeRoom) return;
     const memberPeer = new Peer({ debug: 1 }); peer = memberPeer; isCoordinator = false; attachPeerHandlers(memberPeer);
     memberPeer.on('open', function () {
-      const connection = memberPeer.connect(coordinatorId, { reliable: true, metadata: { nickname: userName() } }); coordinatorConnection = connection;
+      const connection = memberPeer.connect(coordinatorId, { reliable: true, metadata: { nickname: userName(), userId: currentUser.id } }); coordinatorConnection = connection;
       const timeout = setTimeout(function () { if (!connection.open) setConnection('Não consegui encontrar a sala', false); }, 9000);
       connection.on('open', function () { clearTimeout(timeout); setConnection('Sala conectada', true); connection.send({ type: 'intro', nickname: userName() }); });
       connection.on('data', function (data) { if (data && data.type === 'roster' && Array.isArray(data.items)) applyRoster(data.items); });
@@ -367,26 +397,48 @@ export const appScript = String.raw`
     leaving = true; stopMedia();
     outgoingCalls.forEach(function (call) { call.close(); }); incomingCalls.forEach(function (call) { call.close(); }); dataConnections.forEach(function (connection) { connection.close(); });
     coordinatorConnection?.close(); peer?.destroy(); peer = null; coordinatorConnection = null; isCoordinator = false;
-    roster.clear(); dataConnections.clear(); outgoingCalls.clear(); incomingCalls.clear(); remoteStreams.clear(); remoteKinds.clear(); $('#mediaGrid').textContent = ''; leaving = false;
+    roster.clear(); peerUserIds.clear(); memberProfiles.clear(); dataConnections.clear(); outgoingCalls.clear(); incomingCalls.clear(); remoteStreams.clear(); remoteKinds.clear(); $('#mediaGrid').textContent = ''; leaving = false; updateMediaButtons();
   }
   function updateMediaButtons() {
-    $('#screenButton').classList.toggle('active', Boolean(screenTrack && screenTrack.readyState === 'live'));
-    $('#cameraButton').classList.toggle('active', Boolean(cameraTrack && cameraTrack.readyState === 'live'));
-    $('#micButton').classList.toggle('active', Boolean(microphoneTrack && microphoneTrack.readyState === 'live'));
+    [['screenButton',screenTrack,'Parar tela','Compartilhar tela'],['cameraButton',cameraTrack,'Desligar câmera','Ligar câmera'],['micButton',microphoneTrack,'Silenciar','Ligar microfone']].forEach(function(item){
+      const on = Boolean(item[1] && item[1].readyState === 'live');
+      const button = $('#' + item[0]); button.classList.toggle('active',on); button.setAttribute('aria-pressed',String(on)); button.setAttribute('aria-label',on ? item[2] : item[3]); button.title = on ? item[2] : item[3]; button.querySelector('small').textContent = on ? item[2] : item[3];
+    });
+  }
+  function microphoneConstraints() { return Object.assign({echoCancellation:true,noiseSuppression:true}, micDevice ? {deviceId:{exact:micDevice}} : {}); }
+  function cameraConstraints() { return Object.assign({width:{ideal:1280},height:{ideal:720}}, cameraDevice ? {deviceId:{exact:cameraDevice}} : {}); }
+  function mediaError(error) {
+    if(error.name === 'NotAllowedError') return 'Acesso bloqueado. Permita câmera ou microfone nas configurações deste site no navegador.';
+    if(error.name === 'NotFoundError') return 'Nenhum dispositivo encontrado. Confira se está conectado.';
+    if(error.name === 'OverconstrainedError') return 'O dispositivo salvo não está disponível. Escolha outro em Áudio e vídeo.';
+    if(error.name === 'NotReadableError') return 'O dispositivo está ocupado ou não pode ser acessado. Feche outros aplicativos e tente novamente.';
+    return 'Não foi possível acessar o dispositivo. Tente novamente.';
+  }
+  async function replaceMicrophone() {
+    const stream = await navigator.mediaDevices.getUserMedia({audio:microphoneConstraints(),video:false});
+    if (!activeRoom) { stream.getTracks().forEach(t=>t.stop()); return; }
+    const previous = microphoneTrack; microphoneTrack = stream.getAudioTracks()[0]; previous?.stop();
+    const current = microphoneTrack; current.addEventListener('ended',function(){if(microphoneTrack===current){microphoneTrack=null;refreshPublishing();}});
+    refreshPublishing();
+  }
+  async function replaceCamera() {
+    const stream = await navigator.mediaDevices.getUserMedia({video:cameraConstraints(),audio:false});
+    if (!activeRoom) { stream.getTracks().forEach(t=>t.stop()); return; }
+    const previous = cameraTrack; cameraTrack = stream.getVideoTracks()[0]; previous?.stop();
+    const current = cameraTrack; current.addEventListener('ended',function(){if(cameraTrack===current){cameraTrack=null;refreshPublishing();}});
+    refreshPublishing();
   }
   async function toggleMicrophone() {
-    try {
-      if (microphoneTrack) { const old = microphoneTrack; microphoneTrack = null; old.stop(); }
-      else { const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false }); microphoneTrack = stream.getAudioTracks()[0]; microphoneTrack.addEventListener('ended', function () { microphoneTrack = null; if (!leaving) refreshPublishing(); }); }
-      refreshPublishing();
-    } catch (_) { showToast('O microfone não foi autorizado.'); }
+    if (!activeRoom) return;
+    $('#micButton').disabled=true;
+    try { if (microphoneTrack) { microphoneTrack.stop(); microphoneTrack=null; refreshPublishing(); } else await replaceMicrophone(); }
+    catch(error){showToast(mediaError(error));} finally{$('#micButton').disabled=false;}
   }
   async function toggleCamera() {
-    try {
-      if (cameraTrack) { const old = cameraTrack; cameraTrack = null; old.stop(); }
-      else { const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); cameraTrack = stream.getVideoTracks()[0]; cameraTrack.addEventListener('ended', function () { cameraTrack = null; if (!leaving) refreshPublishing(); }); }
-      refreshPublishing();
-    } catch (_) { showToast('A câmera não foi autorizada.'); }
+    if (!activeRoom) return;
+    $('#cameraButton').disabled=true;
+    try { if(cameraTrack){cameraTrack.stop();cameraTrack=null;refreshPublishing();}else await replaceCamera(); }
+    catch(error){showToast(mediaError(error));}finally{$('#cameraButton').disabled=false;}
   }
   async function toggleScreen() {
     try {
@@ -398,25 +450,28 @@ export const appScript = String.raw`
 
   async function openRoom(room) {
     if (activeRoom && activeRoom.id === room.id) { $('#sidebar').classList.remove('open'); return; }
-    cleanupPeer(); activeRoom = room; renderRooms();
+    cleanupPeer(); activeRoom = room; renderRooms(); updateRoomHeading();
     $('#emptyStage').classList.add('hidden'); $('#mediaStage').classList.remove('hidden'); $('#mediaControls').classList.remove('hidden');
     $('#roomTitle').textContent = room.name; $('#roomSubtitle').textContent = 'Sala ' + room.code; $('#chatRoomName').textContent = '#' + room.name;
     $('#inviteButton').disabled = false; $('#messageInput').disabled = false; $('#sendMessage').disabled = false; $('#messageInput').placeholder = 'Mensagem em #' + room.name;
     $('#sidebar').classList.remove('open'); setConnection('Conectando à sala…', false); subscribeChat(); await startPeerRoom(room);
   }
   function leaveActiveRoom() {
-    cleanupPeer(); activeRoom = null; renderRooms(); resetChat();
+    cleanupPeer(); activeRoom = null; renderRooms(); resetChat(); $('#roomSettingsButton').classList.add('hidden'); $('#headerRoomAvatar').style.backgroundImage=''; $('#headerRoomAvatar').textContent='#';
     $('#emptyStage').classList.remove('hidden'); $('#mediaStage').classList.add('hidden'); $('#mediaControls').classList.add('hidden');
     $('#roomTitle').textContent = 'Escolha uma sala'; $('#roomSubtitle').textContent = 'Suas salas ficam salvas aqui'; $('#chatRoomName').textContent = 'Selecione uma sala'; $('#participantCount').textContent = '0 online';
     $('#inviteButton').disabled = true; $('#messageInput').disabled = true; $('#sendMessage').disabled = true; $('#messageInput').placeholder = 'Escolha uma sala para conversar';
   }
 
   async function bootSignedIn(user) {
-    currentUser = user; $('#authScreen').classList.add('hidden'); $('#app').classList.remove('hidden'); renderAccount(); await loadRooms();
+    currentUser = user;
+    const profileResult = await db.from('profiles').select('display_name,avatar_url').eq('id',user.id).single();
+    ownProfile = profileResult.data || null;
+    $('#authScreen').classList.add('hidden'); $('#app').classList.remove('hidden'); renderAccount(); await loadRooms();
     if (pendingInvite) await loadInvitePreview();
   }
   async function bootSignedOut() {
-    currentUser = null; cleanupPeer(); activeRoom = null; $('#app').classList.add('hidden'); $('#authScreen').classList.remove('hidden'); await loadInvitePreview(); await initGoogleButton();
+    currentUser = null; ownProfile=null; stopPreviews(); resetChat(); document.querySelectorAll('.modal-backdrop').forEach(m=>m.classList.add('hidden')); cleanupPeer(); activeRoom = null; $('#app').classList.add('hidden'); $('#authScreen').classList.remove('hidden'); await loadInvitePreview(); await initGoogleButton();
   }
   function handleSession(session) {
     const user = session && session.user;
@@ -437,10 +492,203 @@ export const appScript = String.raw`
   $('#declineInvite').addEventListener('click', function () { pendingInvite = ''; history.replaceState(null, '', location.pathname); closeModal('acceptInviteModal'); });
   $('#logoutButton').addEventListener('click', async function () { await db.auth.signOut(); });
   $('#openSidebar').addEventListener('click', function () { $('#sidebar').classList.add('open'); }); $('#closeSidebar').addEventListener('click', function () { $('#sidebar').classList.remove('open'); });
-  $('#toggleChat').addEventListener('click', function () { $('#chatPanel').classList.toggle('open'); }); $('#closeChat').addEventListener('click', function () { $('#chatPanel').classList.remove('open'); });
+  function toggleChat(force) {
+    if (window.matchMedia('(max-width:980px)').matches) {
+      const open = typeof force==='boolean' ? force : !$('#chatPanel').classList.contains('open');
+      $('.room-layout').classList.remove('chat-hidden'); $('#chatPanel').classList.toggle('open',open); $('#toggleChat').setAttribute('aria-pressed',String(open));
+    } else {
+      const open = typeof force==='boolean' ? force : $('.room-layout').classList.contains('chat-hidden');
+      $('.room-layout').classList.toggle('chat-hidden',!open); $('#toggleChat').setAttribute('aria-pressed',String(open));
+    }
+  }
+  $('#toggleChat').addEventListener('click', function () { toggleChat(); }); $('#closeChat').addEventListener('click', function () { toggleChat(false); });
   $('#micButton').addEventListener('click', toggleMicrophone); $('#cameraButton').addEventListener('click', toggleCamera); $('#screenButton').addEventListener('click', toggleScreen); $('#leaveButton').addEventListener('click', leaveActiveRoom);
-  window.addEventListener('beforeunload', function () { leaving = true; stopMedia(); peer?.destroy(); });
+  window.addEventListener('beforeunload', function () { stopPreviews(); leaving = true; stopMedia(); peer?.destroy(); });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(function () {});
+
+
+  async function resolvePhoto(value) {
+    if (!value) return '';
+    if (!value.startsWith('media:')) { try { const url=new URL(value);return ['https:','blob:'].includes(url.protocol)?value:''; } catch{return '';} }
+    const path=value.slice(6), cached=photoCache.get(path);
+    if(cached && cached.until>Date.now()) return cached.url;
+    const result=await db.storage.from('mostra-photos').createSignedUrl(path,3600);
+    if(result.error) return '';
+    photoCache.set(path,{url:result.data.signedUrl,until:Date.now()+3300000});return result.data.signedUrl;
+  }
+  let loadingMembers=false;
+  async function loadMemberProfiles() {
+    if(loadingMembers||!activeRoom)return;
+    const ids=Array.from(new Set(peerUserIds.values())).filter(id=>!memberProfiles.has(id));
+    if(!ids.length)return;
+    loadingMembers=true;
+    try{
+      const result=await db.from('profiles').select('id,display_name,avatar_url').in('id',ids);
+      for(const profile of result.data||[]) memberProfiles.set(profile.id,profile);
+      renderRoster();
+    }finally{loadingMembers=false;}
+  }
+  function updateRoomHeading() {
+    if(!activeRoom)return;
+    setAvatar($('#headerRoomAvatar'),activeRoom.name,activeRoom.avatar_url);
+    $('#roomSettingsButton').classList.toggle('hidden',activeRoom.owner_id!==currentUser.id);
+    $('#roomTitle').textContent=activeRoom.name;$('#chatRoomName').textContent=activeRoom.name;
+  }
+  function resetDraft(kind) {
+    const draft=kind==='profile'?profileDraftPhoto:roomDraftPhoto;
+    if(draft?.url)URL.revokeObjectURL(draft.url);
+    if(kind==='profile')profileDraftPhoto=undefined;else roomDraftPhoto=undefined;
+  }
+  async function preparePhoto(file) {
+    if(!['image/jpeg','image/png','image/webp'].includes(file.type)) throw new Error('Escolha uma foto JPG, PNG ou WebP.');
+    if(file.size>5*1024*1024)throw new Error('A foto deve ter até 5 MB.');
+    const bitmap=await createImageBitmap(file);
+    try {
+      const canvas=document.createElement('canvas');canvas.width=512;canvas.height=512;
+      const ctx=canvas.getContext('2d'),size=Math.min(bitmap.width,bitmap.height);
+      ctx.fillStyle='#30243f';ctx.fillRect(0,0,512,512);
+      ctx.drawImage(bitmap,(bitmap.width-size)/2,(bitmap.height-size)/2,size,size,0,0,512,512);
+      const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.86));
+      if(!blob)throw new Error('Não consegui abrir esta imagem.');
+      return {blob,url:URL.createObjectURL(blob)};
+    }finally{bitmap.close();}
+  }
+  async function choosePhoto(kind,input) {
+    const file=input.files[0];if(!file)return;
+    const error=$('#'+(kind==='profile'?'profileError':'roomSettingsError'));error.textContent='';
+    try {
+      const prepared=await preparePhoto(file);resetDraft(kind);
+      if(kind==='profile')profileDraftPhoto=prepared;else roomDraftPhoto=prepared;
+      setAvatar($('#'+(kind==='profile'?'profilePhotoPreview':'roomPhotoPreview')),'',prepared.url);
+    }catch(err){error.textContent=err.message;}finally{input.value='';}
+  }
+  async function uploadPhoto(kind,id,draft) {
+    const path=kind+'/'+id+'/'+crypto.randomUUID()+'.jpg';
+    const result=await db.storage.from('mostra-photos').upload(path,draft.blob,{contentType:'image/jpeg',cacheControl:'3600',upsert:false});
+    if(result.error)throw new Error('Não consegui enviar a foto. Tente novamente.');
+    return 'media:'+path;
+  }
+  async function removeOldPhoto(value) {if(value?.startsWith('media:'))await db.storage.from('mostra-photos').remove([value.slice(6)]);}
+  function editProfile() {
+    resetDraft('profile');$('#profileNameInput').value=userName();$('#profileError').textContent='';
+    setAvatar($('#profilePhotoPreview'),userName(),avatarUrl());openModal('profileModal');
+  }
+  function editRoom() {
+    if(!activeRoom||activeRoom.owner_id!==currentUser.id)return;
+    resetDraft('room');$('#editRoomName').value=activeRoom.name;$('#roomSettingsError').textContent='';
+    setAvatar($('#roomPhotoPreview'),activeRoom.name,activeRoom.avatar_url);openModal('roomSettingsModal');
+  }
+  async function savePersonalization(event,kind) {
+    event.preventDefault();const isProfile=kind==='profile';
+    const form=event.currentTarget,button=form.querySelector('button[type=submit]'),error=$('#'+(isProfile?'profileError':'roomSettingsError'));
+    const name=$('#'+(isProfile?'profileNameInput':'editRoomName')).value.trim();
+    if(!name){error.textContent='Digite um nome.';return;}
+    const id=isProfile?currentUser.id:activeRoom?.id;if(!id)return;
+    const oldPhoto=isProfile?avatarUrl():activeRoom.avatar_url;
+    const draft=isProfile?profileDraftPhoto:roomDraftPhoto;
+    let newPhoto=oldPhoto;
+    button.disabled=true;button.textContent='Salvando…';error.textContent='';
+    try {
+      if(draft)newPhoto=await uploadPhoto(isProfile?'profiles':'rooms',id,draft);
+      else if(draft===null)newPhoto=null;
+      const values=isProfile?{display_name:name,avatar_url:newPhoto}:{name:name,avatar_url:newPhoto};
+      const result=await db.from(isProfile?'profiles':'rooms').update(values).eq('id',id).select('id').single();
+      if(result.error)throw new Error('Não consegui salvar. Confira sua conexão e tente novamente.');
+      if(isProfile){
+        ownProfile=values;renderAccount();
+        if(peer){roster.set(peer.id,name);if(isCoordinator)broadcastRoster();else coordinatorConnection?.send({type:'intro',nickname:name});renderRoster();}
+      }else{
+        rooms=rooms.map(room=>room.id===id?Object.assign({},room,values):room);
+        if(activeRoom?.id===id){activeRoom=Object.assign({},activeRoom,values);updateRoomHeading();}
+        renderRooms();
+      }
+      closeModal(isProfile?'profileModal':'roomSettingsModal');showToast('Alterações salvas.');
+      if(newPhoto!==oldPhoto)removeOldPhoto(oldPhoto).catch(()=>{});
+      resetDraft(kind);
+    }catch(err){error.textContent=err.message;if(newPhoto!==oldPhoto&&newPhoto)await removeOldPhoto(newPhoto);}
+    finally{button.disabled=false;button.textContent='Salvar alterações';}
+  }
+  async function enumerateDevices() {
+    if(!navigator.mediaDevices?.enumerateDevices){$('#deviceHint').textContent='Seu navegador não oferece seleção de dispositivos.';return;}
+    try{
+      const devices=await navigator.mediaDevices.enumerateDevices();
+      [['microphoneSelect','audioinput',micDevice,'Microfone'],['cameraSelect','videoinput',cameraDevice,'Câmera']].forEach(([id,kind,selected,label])=>{
+        const select=$('#'+id);select.textContent='';select.add(new Option('Padrão do sistema',''));
+        devices.filter(d=>d.kind===kind&&d.deviceId&&d.deviceId!=='default').forEach((d,i)=>select.add(new Option(d.label||label+' '+(i+1),d.deviceId)));
+        if(selected&&!Array.from(select.options).some(o=>o.value===selected))select.add(new Option('Dispositivo salvo (indisponível)',selected));
+        select.value=selected;
+      });
+    }catch(err){$('#deviceHint').textContent=mediaError(err);}
+  }
+  function stopMicPreview() {
+    previewMic?.getTracks().forEach(t=>t.stop());previewMic=null;
+    if(meterFrame)cancelAnimationFrame(meterFrame);meterFrame=null;
+    meterContext?.close().catch(()=>{});meterContext=null;$('#micLevel').value=0;$('#testMic').textContent='Testar microfone';
+  }
+  function stopCameraPreview() {
+    previewCamera?.getTracks().forEach(t=>t.stop());previewCamera=null;
+    $('#cameraPreview').srcObject=null;$('#cameraPreviewHint').classList.remove('hidden');$('#testCamera').textContent='Testar câmera';
+  }
+  function stopPreviews(){previewGeneration++;stopMicPreview();stopCameraPreview();}
+  async function testMicrophone() {
+    if(previewMic){stopMicPreview();return;}
+    const generation=previewGeneration;$('#testMic').disabled=true;
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({audio:microphoneConstraints(),video:false});
+      if(generation!==previewGeneration){stream.getTracks().forEach(t=>t.stop());return;}
+      previewMic=stream;$('#testMic').textContent='Parar teste';await enumerateDevices();
+      if(generation!==previewGeneration)return;
+      const AudioCtx=window.AudioContext||window.webkitAudioContext;meterContext=new AudioCtx();await meterContext.resume();
+      if(generation!==previewGeneration)return;
+      const source=meterContext.createMediaStreamSource(stream),analyser=meterContext.createAnalyser();analyser.fftSize=256;source.connect(analyser);
+      const data=new Uint8Array(analyser.fftSize);
+      function measure(){if(!previewMic)return;analyser.getByteTimeDomainData(data);let sum=0;for(const v of data)sum+=Math.pow((v-128)/128,2);$('#micLevel').value=Math.min(100,Math.sqrt(sum/data.length)*350);meterFrame=requestAnimationFrame(measure);}
+      measure();$('#deviceHint').textContent='Teste local: seu microfone não está sendo transmitido por este teste.';
+    }catch(err){stopMicPreview();$('#deviceHint').textContent=mediaError(err);}finally{$('#testMic').disabled=false;}
+  }
+  async function testCamera() {
+    if(previewCamera){stopCameraPreview();return;}
+    const generation=previewGeneration;$('#testCamera').disabled=true;
+    try {
+      const stream=await navigator.mediaDevices.getUserMedia({video:cameraConstraints(),audio:false});
+      if(generation!==previewGeneration){stream.getTracks().forEach(t=>t.stop());return;}
+      previewCamera=stream;$('#cameraPreview').srcObject=stream;$('#cameraPreviewHint').classList.add('hidden');$('#testCamera').textContent='Parar prévia';
+      await enumerateDevices();$('#deviceHint').textContent='Esta prévia fica só com você. Fechar esta janela encerra o teste.';
+    }catch(err){$('#deviceHint').textContent=mediaError(err);}finally{$('#testCamera').disabled=false;}
+  }
+  async function changeDevice(kind) {
+    const isMic=kind==='mic',select=$('#'+(isMic?'microphoneSelect':'cameraSelect')),old=isMic?micDevice:cameraDevice;
+    if(isMic)micDevice=select.value;else cameraDevice=select.value;
+    select.disabled=true;
+    try{
+      if(isMic&&microphoneTrack)await replaceMicrophone();else if(!isMic&&cameraTrack)await replaceCamera();
+      if(isMic&&previewMic){stopMicPreview();await testMicrophone();}else if(!isMic&&previewCamera){stopCameraPreview();await testCamera();}
+      localStorage.setItem(isMic?'mostra-microphone':'mostra-camera',select.value);
+      $('#deviceHint').textContent='Dispositivo escolhido. A preferência fica salva neste navegador.';
+    }catch(err){if(isMic)micDevice=old;else cameraDevice=old;select.value=old;$('#deviceHint').textContent=mediaError(err);}finally{select.disabled=false;}
+  }
+  function openDevices(focus) {openModal('devicesModal');enumerateDevices();if(focus)$('#'+focus).focus();}
+  $('#profileButton').addEventListener('click',editProfile);$('#accountAvatar').addEventListener('click',editProfile);
+  $('#roomSettingsButton').addEventListener('click',editRoom);
+  $('#profilePhoto').addEventListener('change',e=>choosePhoto('profile',e.target));$('#roomPhoto').addEventListener('change',e=>choosePhoto('room',e.target));
+  $('#removeProfilePhoto').addEventListener('click',()=>{resetDraft('profile');profileDraftPhoto=null;setAvatar($('#profilePhotoPreview'),userName(),'');});
+  $('#removeRoomPhoto').addEventListener('click',()=>{resetDraft('room');roomDraftPhoto=null;setAvatar($('#roomPhotoPreview'),activeRoom.name,'');});
+  $('#profileForm').addEventListener('submit',e=>savePersonalization(e,'profile'));$('#roomSettingsForm').addEventListener('submit',e=>savePersonalization(e,'room'));
+  $('#roomSearch').addEventListener('input',renderRooms);
+  $('#sidebarDevices').addEventListener('click',()=>openDevices());$('#micDevices').addEventListener('click',()=>openDevices('microphoneSelect'));$('#cameraDevices').addEventListener('click',()=>openDevices('cameraSelect'));
+  $('#testMic').addEventListener('click',testMicrophone);$('#testCamera').addEventListener('click',testCamera);
+  $('#microphoneSelect').addEventListener('change',()=>changeDevice('mic'));$('#cameraSelect').addEventListener('change',()=>changeDevice('camera'));
+  navigator.mediaDevices?.addEventListener('devicechange',()=>{if(!$('#devicesModal').classList.contains('hidden'))enumerateDevices();});
+  document.addEventListener('keydown',event=>{
+    const modal=Array.from(document.querySelectorAll('.modal-backdrop')).find(m=>!m.classList.contains('hidden'));if(!modal)return;
+    if(event.key==='Escape'&&modal.id!=='acceptInviteModal'){closeModal(modal.id);return;}
+    if(event.key==='Tab'){
+      const nodes=Array.from(modal.querySelectorAll('button:not(:disabled),input:not(:disabled):not([type=file]),select:not(:disabled),a[href]')).filter(n=>n.getClientRects().length);
+      if(!nodes.length)return;
+      if(event.shiftKey&&document.activeElement===nodes[0]){event.preventDefault();nodes[nodes.length-1].focus();}
+      else if(!event.shiftKey&&document.activeElement===nodes[nodes.length-1]){event.preventDefault();nodes[0].focus();}
+    }
+  });
 
   db.auth.onAuthStateChange(function (_event, session) {
     setTimeout(function () { handleSession(session); }, 0);
