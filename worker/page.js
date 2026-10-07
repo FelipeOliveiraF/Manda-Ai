@@ -12,11 +12,11 @@ export const page = `<!doctype html>
 </head>
 <body>
   <section class="auth-screen" id="authScreen">
-    <div class="auth-brand"><span class="brand-mark">↗</span><span>Mostra aí</span></div>
+    <div class="auth-brand"><span class="brand-mark">M</span><span>Mostra aí</span></div>
     <div class="auth-card">
-      <div class="auth-kicker">SEU LUGAR, SUA GALERA</div>
-      <h1>Entra aí.<br><span>Tem coisa pra mostrar.</span></h1>
-      <p>Salas privadas para compartilhar tela, ligar câmera, conversar e mandar mensagem — sem montar reunião.</p>
+      <div class="auth-kicker">MOSTRA AÍ</div>
+      <h1>Entre na sua conta</h1>
+      <p>Acesse suas salas, convites e conversas.</p>
       <div class="invite-preview hidden" id="loginInvitePreview">
         <span class="invite-icon">#</span>
         <div><small>Você foi convidado para</small><strong id="loginInviteName">uma sala</strong></div>
@@ -25,13 +25,12 @@ export const page = `<!doctype html>
       <p class="auth-status" id="authStatus">Entre com o Google para continuar.</p>
       <p class="auth-legal">Ao entrar, você concorda com os <a href="/terms">Termos</a> e a <a href="/privacy">Privacidade</a>.</p>
     </div>
-    <div class="auth-orb orb-one"></div><div class="auth-orb orb-two"></div>
   </section>
 
   <div class="app hidden" id="app">
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-head">
-        <a class="wordmark" href="/" aria-label="Mostra aí"><span class="brand-mark">↗</span><span>Mostra aí</span></a>
+        <a class="wordmark" href="/" aria-label="Mostra aí"><span class="brand-mark">M</span><span>Mostra aí</span></a>
         <button class="square-button" id="closeSidebar" title="Fechar menu">×</button>
       </div>
       <div class="rooms-heading"><span>SUAS SALAS</span><button id="newRoom" title="Criar sala">＋</button></div>
@@ -40,7 +39,7 @@ export const page = `<!doctype html>
       <div class="account-card">
         <span class="account-avatar" id="accountAvatar">A</span>
         <div class="account-copy"><strong id="accountName">Amigo</strong><small>Disponível</small></div>
-        <button id="logoutButton" title="Sair da conta">↪</button>
+        <button id="logoutButton" title="Sair da conta">Sair</button>
       </div>
     </aside>
 
@@ -61,7 +60,7 @@ export const page = `<!doctype html>
       <div class="room-layout">
         <section class="stage-panel">
           <div class="empty-stage" id="emptyStage">
-            <div class="empty-icon">↗</div>
+            <div class="empty-icon">#</div>
             <h2>Escolha uma sala</h2>
             <p>Entre em uma sala da lateral ou crie uma nova para começar.</p>
             <button class="primary-button" id="emptyCreate">Criar uma sala</button>
@@ -73,7 +72,7 @@ export const page = `<!doctype html>
           <div class="media-controls hidden" id="mediaControls">
             <button class="control-button" id="micButton"><span>◉</span><small>Microfone</small></button>
             <button class="control-button" id="cameraButton"><span>▣</span><small>Câmera</small></button>
-            <button class="control-button share" id="screenButton"><span>↗</span><small>Compartilhar tela</small></button>
+            <button class="control-button share" id="screenButton"><span>▣</span><small>Compartilhar tela</small></button>
             <button class="control-button danger" id="leaveButton"><span>×</span><small>Sair</small></button>
           </div>
         </section>
@@ -83,7 +82,7 @@ export const page = `<!doctype html>
           <div class="messages" id="messages"><div class="chat-empty"><span>✦</span><strong>O chat começa aqui</strong><small>As mensagens desta sala aparecem para todos os membros.</small></div></div>
           <form class="message-form" id="messageForm">
             <input id="messageInput" maxlength="2000" autocomplete="off" placeholder="Escolha uma sala para conversar" disabled>
-            <button type="submit" disabled id="sendMessage">↑</button>
+            <button type="submit" disabled id="sendMessage">Enviar</button>
           </form>
         </aside>
       </div>
@@ -105,7 +104,7 @@ export const page = `<!doctype html>
   <div class="modal-backdrop hidden" id="inviteModal">
     <div class="modal">
       <button class="modal-close" type="button" data-close="inviteModal">×</button>
-      <div class="modal-icon">↗</div><h2>Convide a galera</h2>
+      <div class="modal-icon">＋</div><h2>Convidar pessoas</h2>
       <p>Quem receber o link entra com o Google e confirma a entrada. Não precisa de senha.</p>
       <label for="inviteLink">Link de convite</label>
       <div class="copy-field"><input id="inviteLink" readonly><button id="copyInvite" type="button">Copiar</button></div>
