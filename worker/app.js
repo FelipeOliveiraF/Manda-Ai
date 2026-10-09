@@ -301,18 +301,52 @@ export const appScript = String.raw`
       const video = document.createElement('video'); video.autoplay = true; video.playsInline = true;
       const meta = document.createElement('div'); meta.className = 'tile-meta';
       const label = document.createElement('span'); label.className = 'tile-name';
-      const type = document.createElement('span'); type.className = 'tile-kind'; meta.append(label, type); tile.append(avatar, video, meta); $('#mediaGrid').appendChild(tile);
+      const type = document.createElement('span'); type.className = 'tile-kind'; meta.append(label, type);
+      const volume = document.createElement('div'); volume.className = 'tile-volume hidden';
+      const mute = document.createElement('button'); mute.type = 'button'; mute.className = 'tile-mute';
+      mute.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path class="volume-waves" d="M15 9a4 4 0 0 1 0 6m3-9a8 8 0 0 1 0 12"/></svg>';
+      const slider = document.createElement('input'); slider.type = 'range'; slider.className = 'tile-volume-range'; slider.min = '0'; slider.max = '1'; slider.step = '0.05'; slider.value = '1';
+      const amount = document.createElement('span'); amount.className = 'tile-volume-value'; amount.textContent = '100%';
+      slider.addEventListener('input', function () {
+        video.volume = Number(slider.value); video.muted = false; tile.dataset.audioMuted = 'false';
+        if (video.volume > 0) tile.dataset.lastVolume = slider.value;
+        amount.textContent = Math.round(video.volume * 100) + '%';
+        mute.classList.toggle('muted', video.volume === 0);
+        mute.setAttribute('aria-label', video.volume === 0 ? 'Reativar áudio' : 'Silenciar áudio');
+        video.play().catch(function () {});
+      });
+      mute.addEventListener('click', function () {
+        const willMute = !video.muted && Number(slider.value) > 0;
+        if (willMute) {
+          tile.dataset.lastVolume = slider.value; video.muted = true; tile.dataset.audioMuted = 'true';
+          amount.textContent = 'Mudo';
+        } else {
+          if (Number(slider.value) === 0) slider.value = tile.dataset.lastVolume || '0.75';
+          video.volume = Number(slider.value); video.muted = false; tile.dataset.audioMuted = 'false';
+          amount.textContent = Math.round(video.volume * 100) + '%';
+        }
+        mute.classList.toggle('muted', video.muted);
+        mute.setAttribute('aria-label', video.muted ? 'Reativar áudio' : 'Silenciar áudio');
+        video.play().catch(function () {});
+      });
+      volume.append(mute, slider, amount); tile.append(avatar, video, meta, volume); $('#mediaGrid').appendChild(tile);
     }
     setAvatar(tile.querySelector('.tile-avatar span'), name, local ? avatarUrl() : memberProfiles.get(peerUserIds.get(peerId))?.avatar_url || '');
     tile.querySelector('.tile-name').textContent = name + (local ? ' (você)' : '');
     tile.querySelector('.tile-kind').textContent = kind === 'screen' ? '· tela' : kind === 'camera' ? '· câmera' : kind === 'audio' ? '· áudio' : '';
     tile.classList.toggle('screen-share', kind === 'screen');
     const video = tile.querySelector('video'); const avatar = tile.querySelector('.tile-avatar');
+    const volume = tile.querySelector('.tile-volume'); const slider = tile.querySelector('.tile-volume-range'); const mute = tile.querySelector('.tile-mute');
     const hasVideo = Boolean(stream && stream.getVideoTracks().some(function (track) { return track.readyState === 'live'; }));
+    const hasAudio = Boolean(stream && stream.getAudioTracks().some(function (track) { return track.readyState === 'live'; }));
+    volume.classList.toggle('hidden', local || !hasAudio);
+    slider.setAttribute('aria-label', 'Volume do áudio de ' + name);
     if (stream && stream.getTracks().length) {
       if (video.srcObject !== stream) video.srcObject = stream;
-      video.muted = local; video.style.display = hasVideo ? 'block' : 'none'; avatar.style.display = hasVideo ? 'none' : 'grid'; video.play().catch(function () {});
+      video.volume = Number(slider.value); video.muted = local || tile.dataset.audioMuted === 'true';
+      video.style.display = hasVideo ? 'block' : 'none'; avatar.style.display = hasVideo ? 'none' : 'grid'; video.play().catch(function () {});
     } else { video.srcObject = null; video.style.display = 'none'; avatar.style.display = 'grid'; }
+    mute.setAttribute('aria-label', video.muted ? 'Reativar áudio de ' + name : 'Silenciar áudio de ' + name);
   }
   function renderRoster() {
     roster.forEach(function (name, id) {
@@ -450,7 +484,12 @@ export const appScript = String.raw`
   async function toggleScreen() {
     try {
       if (screenTrack) { const oldVideo = screenTrack; const oldAudio = screenAudioTracks.slice(); screenTrack = null; screenAudioTracks = []; oldVideo.stop(); oldAudio.forEach(function (track) { track.stop(); }); }
-      else { const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30, max: 60 } }, audio: true }); screenTrack = stream.getVideoTracks()[0]; screenAudioTracks = stream.getAudioTracks(); screenTrack.addEventListener('ended', function () { screenTrack = null; screenAudioTracks.forEach(function (track) { track.stop(); }); screenAudioTracks = []; if (!leaving) refreshPublishing(); }); }
+      else {
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30, max: 60 } }, audio: true });
+        screenTrack = stream.getVideoTracks()[0]; screenAudioTracks = stream.getAudioTracks();
+        if (!screenAudioTracks.length) showToast('Para transmitir o som, marque “Compartilhar áudio” na janela do navegador.');
+        screenTrack.addEventListener('ended', function () { screenTrack = null; screenAudioTracks.forEach(function (track) { track.stop(); }); screenAudioTracks = []; if (!leaving) refreshPublishing(); });
+      }
       refreshPublishing();
     } catch (_) { showToast('O compartilhamento foi cancelado.'); }
   }
