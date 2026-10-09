@@ -212,7 +212,14 @@ export const appScript = String.raw`
     const result = await db.rpc('accept_room_invite', { p_token: pendingInvite });
     button.disabled = false; button.textContent = 'Aceitar convite';
     const accepted = Array.isArray(result.data) ? result.data[0] : result.data;
-    if (result.error || !accepted) { $('#inviteError').textContent = 'Este convite não está mais disponível.'; return; }
+    if (result.error || !accepted) {
+      const unavailable = !result.error || result.error.code === 'P0001' ||
+        /not found|expired/i.test(result.error.message || '');
+      $('#inviteError').textContent = unavailable
+        ? 'Este convite não está mais disponível.'
+        : 'Não consegui aceitar o convite agora. Tente novamente.';
+      return;
+    }
     pendingInvite = ''; history.replaceState(null, '', location.pathname); closeModal('acceptInviteModal');
     await loadRooms(accepted.room_id);
     showToast('Sala adicionada à sua conta.');
