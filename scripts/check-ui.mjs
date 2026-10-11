@@ -16,4 +16,6 @@ for(const path of ['/','/app.js','/app.css','/privacy','/manifest.webmanifest'])
 assert.equal((await app.fetch(new Request('https://local.invalid/test-fixture'))).status,404);
 assert.match(appScript,/tile-volume-range/);
 assert.match(appScript,/getAudioTracks/);
+assert.match(appScript,/requestFullscreen/);
+assert.match(appScript,/tile-fullscreen/);
 console.log('PASS: client syntax, unique IDs, client selectors, routes, fixture excluded');

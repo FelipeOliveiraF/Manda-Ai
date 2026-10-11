@@ -293,12 +293,46 @@ export const appScript = String.raw`
     return 'none';
   }
   function findTile(peerId) { return Array.from($('#mediaGrid').children).find(function (tile) { return tile.dataset.peerId === peerId; }); }
+  function fullscreenElement() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+  async function toggleTileFullscreen(tile) {
+    try {
+      if (fullscreenElement() === tile) {
+        if (document.exitFullscreen) await document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        return;
+      }
+      if (fullscreenElement()) {
+        if (document.exitFullscreen) await document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      }
+      if (tile.requestFullscreen) await tile.requestFullscreen();
+      else if (tile.webkitRequestFullscreen) tile.webkitRequestFullscreen();
+      else {
+        const video = tile.querySelector('video');
+        if (video && video.webkitEnterFullscreen) video.webkitEnterFullscreen();
+        else showToast('Seu navegador não oferece tela cheia para este vídeo.');
+      }
+    } catch (_) { showToast('Não consegui abrir a transmissão em tela cheia.'); }
+  }
+  function updateFullscreenButtons() {
+    Array.from(document.querySelectorAll('.tile-fullscreen')).forEach(function (button) {
+      const tile = button.closest('.media-tile');
+      const active = fullscreenElement() === tile;
+      const name = tile.querySelector('.tile-name')?.textContent?.replace(' (você)', '') || 'transmissão';
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-label', (active ? 'Sair da tela cheia de ' : 'Colocar em tela cheia a transmissão de ') + name);
+      button.title = active ? 'Sair da tela cheia' : 'Tela cheia';
+    });
+  }
+  document.addEventListener('fullscreenchange', updateFullscreenButtons);
+  document.addEventListener('webkitfullscreenchange', updateFullscreenButtons);
   function ensureTile(peerId, name, stream, kind, local) {
     let tile = findTile(peerId);
     if (!tile) {
       tile = document.createElement('article'); tile.className = 'media-tile'; tile.dataset.peerId = peerId;
       const avatar = document.createElement('div'); avatar.className = 'tile-avatar'; avatar.appendChild(document.createElement('span'));
       const video = document.createElement('video'); video.autoplay = true; video.playsInline = true;
+      video.addEventListener('dblclick', function () { if (tile.classList.contains('screen-share')) toggleTileFullscreen(tile); });
       const meta = document.createElement('div'); meta.className = 'tile-meta';
       const label = document.createElement('span'); label.className = 'tile-name';
       const type = document.createElement('span'); type.className = 'tile-kind'; meta.append(label, type);
@@ -307,6 +341,9 @@ export const appScript = String.raw`
       mute.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path class="volume-waves" d="M15 9a4 4 0 0 1 0 6m3-9a8 8 0 0 1 0 12"/></svg>';
       const slider = document.createElement('input'); slider.type = 'range'; slider.className = 'tile-volume-range'; slider.min = '0'; slider.max = '1'; slider.step = '0.05'; slider.value = '1';
       const amount = document.createElement('span'); amount.className = 'tile-volume-value'; amount.textContent = '100%';
+      const fullscreen = document.createElement('button'); fullscreen.type = 'button'; fullscreen.className = 'tile-fullscreen hidden';
+      fullscreen.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>';
+      fullscreen.addEventListener('click', function (event) { event.stopPropagation(); toggleTileFullscreen(tile); });
       slider.addEventListener('input', function () {
         video.volume = Number(slider.value); video.muted = false; tile.dataset.audioMuted = 'false';
         if (video.volume > 0) tile.dataset.lastVolume = slider.value;
@@ -329,7 +366,7 @@ export const appScript = String.raw`
         mute.setAttribute('aria-label', video.muted ? 'Reativar áudio' : 'Silenciar áudio');
         video.play().catch(function () {});
       });
-      volume.append(mute, slider, amount); tile.append(avatar, video, meta, volume); $('#mediaGrid').appendChild(tile);
+      volume.append(mute, slider, amount); tile.append(avatar, video, meta, volume, fullscreen); $('#mediaGrid').appendChild(tile);
     }
     setAvatar(tile.querySelector('.tile-avatar span'), name, local ? avatarUrl() : memberProfiles.get(peerUserIds.get(peerId))?.avatar_url || '');
     tile.querySelector('.tile-name').textContent = name + (local ? ' (você)' : '');
@@ -337,9 +374,11 @@ export const appScript = String.raw`
     tile.classList.toggle('screen-share', kind === 'screen');
     const video = tile.querySelector('video'); const avatar = tile.querySelector('.tile-avatar');
     const volume = tile.querySelector('.tile-volume'); const slider = tile.querySelector('.tile-volume-range'); const mute = tile.querySelector('.tile-mute');
+    const fullscreen = tile.querySelector('.tile-fullscreen');
     const hasVideo = Boolean(stream && stream.getVideoTracks().some(function (track) { return track.readyState === 'live'; }));
     const hasAudio = Boolean(stream && stream.getAudioTracks().some(function (track) { return track.readyState === 'live'; }));
     volume.classList.toggle('hidden', local || !hasAudio);
+    fullscreen.classList.toggle('hidden', kind !== 'screen' || !hasVideo);
     slider.setAttribute('aria-label', 'Volume do áudio de ' + name);
     if (stream && stream.getTracks().length) {
       if (video.srcObject !== stream) video.srcObject = stream;
@@ -347,6 +386,7 @@ export const appScript = String.raw`
       video.style.display = hasVideo ? 'block' : 'none'; avatar.style.display = hasVideo ? 'none' : 'grid'; video.play().catch(function () {});
     } else { video.srcObject = null; video.style.display = 'none'; avatar.style.display = 'grid'; }
     mute.setAttribute('aria-label', video.muted ? 'Reativar áudio de ' + name : 'Silenciar áudio de ' + name);
+    updateFullscreenButtons();
   }
   function renderRoster() {
     roster.forEach(function (name, id) {
