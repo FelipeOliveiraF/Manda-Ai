@@ -18,4 +18,7 @@ assert.match(appScript,/tile-volume-range/);
 assert.match(appScript,/getAudioTracks/);
 assert.match(appScript,/requestFullscreen/);
 assert.match(appScript,/tile-fullscreen/);
+assert.match(appScript,/systemAudio: 'exclude'/);
+assert.match(appScript,/windowAudio: 'exclude'/);
+assert.match(appScript,/displaySurface === 'browser'/);
 console.log('PASS: client syntax, unique IDs, client selectors, routes, fixture excluded');

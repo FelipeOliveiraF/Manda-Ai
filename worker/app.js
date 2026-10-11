@@ -525,9 +525,26 @@ export const appScript = String.raw`
     try {
       if (screenTrack) { const oldVideo = screenTrack; const oldAudio = screenAudioTracks.slice(); screenTrack = null; screenAudioTracks = []; oldVideo.stop(); oldAudio.forEach(function (track) { track.stop(); }); }
       else {
-        const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30, max: 60 } }, audio: true });
-        screenTrack = stream.getVideoTracks()[0]; screenAudioTracks = stream.getAudioTracks();
-        if (!screenAudioTracks.length) showToast('Para transmitir o som, marque “Compartilhar áudio” na janela do navegador.');
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { frameRate: { ideal: 30, max: 60 }, displaySurface: 'browser' },
+          audio: { suppressLocalAudioPlayback: false },
+          preferCurrentTab: true,
+          selfBrowserSurface: 'exclude',
+          surfaceSwitching: 'include',
+          systemAudio: 'exclude',
+          windowAudio: 'exclude'
+        });
+        screenTrack = stream.getVideoTracks()[0];
+        const displaySurface = screenTrack?.getSettings?.().displaySurface;
+        const capturedAudio = stream.getAudioTracks();
+        if (displaySurface === 'browser') {
+          screenAudioTracks = capturedAudio;
+          showToast(screenAudioTracks.length ? 'Compartilhando somente o áudio desta aba.' : 'Ative “Compartilhar áudio da guia” para transmitir o som da aba.');
+        } else {
+          capturedAudio.forEach(function (track) { track.stop(); stream.removeTrack(track); });
+          screenAudioTracks = [];
+          showToast('Tela compartilhada sem áudio do computador. Para enviar som, escolha uma aba do navegador.');
+        }
         screenTrack.addEventListener('ended', function () { screenTrack = null; screenAudioTracks.forEach(function (track) { track.stop(); }); screenAudioTracks = []; if (!leaving) refreshPublishing(); });
       }
       refreshPublishing();
