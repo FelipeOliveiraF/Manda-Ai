@@ -23,4 +23,4 @@ await Promise.all([
   writeFile(resolve(generated, "application-runtime.ts"), runtimeModule),
 ]);
 
-console.log("Estilos e runtime v1.15 preparados para a interface React.");
+console.log("Estilos e runtime v1.16 preparados para a interface React.");

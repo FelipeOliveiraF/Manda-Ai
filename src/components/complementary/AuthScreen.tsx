@@ -28,7 +28,7 @@ export function AuthScreen() {
           <div className="google-slot" id="googleButton" />
           <p className="auth-status" id="authStatus">Entre com o Google para continuar.</p>
           <p className="auth-legal">Ao entrar, você concorda com os <a href="/terms">Termos</a> e a <a href="/privacy">Privacidade</a>.</p>
-          <span className="version-badge">Versão 1.15</span>
+          <span className="version-badge">Versão 1.16</span>
         </div>
       </div>
     </section>
