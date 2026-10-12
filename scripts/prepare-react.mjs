@@ -17,7 +17,10 @@ const authMatch = markup.match(/<section class="auth-screen"[\s\S]*?<\/section>/
 const overlayStart = markup.indexOf('<div class="modal-backdrop hidden" id="createModal">');
 if (!authMatch || overlayStart < 0) throw new Error("Não foi possível separar as superfícies legadas.");
 const authMarkup = authMatch[0];
-const overlayMarkup = markup.slice(overlayStart);
+const overlayMarkup = markup.slice(overlayStart).replace(
+  /<div class="modal-backdrop hidden" id="prejoinModal">[\s\S]*?(?=<div class="modal-backdrop hidden" id="devicesModal">)/i,
+  "",
+);
 const browserStyles = styles.replace(/^\s*@import url\([^\n]+\);\s*/i, "");
 const fragmentsModule = `// Gerado por scripts/prepare-react.mjs. Não edite manualmente.\nexport const authMarkup = ${JSON.stringify(authMarkup)};\nexport const overlayMarkup = ${JSON.stringify(overlayMarkup)};\n`;
 await Promise.all([

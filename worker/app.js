@@ -533,7 +533,7 @@ export const appScript = String.raw`
       tile = document.createElement('article'); tile.className = 'media-tile'; tile.dataset.peerId = peerId;
       const avatar = document.createElement('div'); avatar.className = 'tile-avatar'; avatar.appendChild(document.createElement('span'));
       const video = document.createElement('video'); video.autoplay = true; video.playsInline = true;
-      video.addEventListener('dblclick', function () { if (tile.classList.contains('screen-share')) toggleTileFullscreen(tile); });
+      video.addEventListener('dblclick', function () { toggleTileFullscreen(tile); });
       const meta = document.createElement('div'); meta.className = 'tile-meta';
       const label = document.createElement('span'); label.className = 'tile-name';
       const type = document.createElement('span'); type.className = 'tile-kind'; meta.append(label, type);
@@ -583,9 +583,9 @@ export const appScript = String.raw`
     const hasVideo = Boolean(stream && stream.getVideoTracks().some(function (track) { return track.readyState === 'live'; }));
     const hasAudio = Boolean(stream && stream.getAudioTracks().some(function (track) { return track.readyState === 'live'; }));
     volume.classList.toggle('hidden', local || !hasAudio);
-    fullscreen.classList.toggle('hidden', kind !== 'screen' || !hasVideo);
-    focus.classList.toggle('hidden', kind !== 'screen' || !hasVideo);
-    if (kind !== 'screen' && tile.classList.contains('focused')) toggleTileFocus(tile);
+    fullscreen.classList.toggle('hidden', !hasVideo);
+    focus.classList.toggle('hidden', !hasVideo);
+    if (!hasVideo && tile.classList.contains('focused')) toggleTileFocus(tile);
     slider.setAttribute('aria-label', 'Volume do áudio de ' + name);
     if (stream && stream.getTracks().length) {
       if (video.srcObject !== stream) video.srcObject = stream;

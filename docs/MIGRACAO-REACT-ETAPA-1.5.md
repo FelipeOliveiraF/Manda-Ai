@@ -23,9 +23,15 @@ Criar uma base moderna e escalável sem interromper as funcionalidades já valid
 
 ## Próximas etapas
 
-### 3. Experiência de chamada
+## Etapa 3 concluída
 
-Migrar pré-entrada, grade de participantes, destaque de compartilhamento, controles de áudio/vídeo e modos de tela.
+- A pré-entrada agora é um componente React nativo, com prévia de câmera, nome por sala, seletores de microfone e câmera e controles mais claros.
+- O palco de chamada ganhou indicador ao vivo, tiles refinados, destaque visual de quem está falando e uma barra flutuante de controles.
+- Qualquer vídeo pode ser colocado em foco ou em tela cheia, mantendo a identidade visual do Mostra aí.
+- Reações e gestos foram integrados ao novo acabamento visual.
+- A negociação WebRTC e as regras de mídia existentes foram preservadas.
+
+## Próximas etapas
 
 ### 4. Telas complementares
 

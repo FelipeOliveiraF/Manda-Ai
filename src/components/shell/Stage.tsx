@@ -1,4 +1,4 @@
-import { Camera, ChevronUp, Headphones, Mic, PhoneOff, ScreenShare } from "lucide-react";
+import { Camera, ChevronUp, Headphones, Mic, PhoneOff, Radio, ScreenShare } from "lucide-react";
 
 function MediaControls() {
   return (
@@ -35,6 +35,7 @@ export function Stage() {
       </div>
       <div className="media-stage hidden" id="mediaStage">
         <div className="connection-note" id="connectionNote"><i /><span>Conectando à sala…</span></div>
+        <div className="call-stage-status" aria-hidden="true"><Radio /><span>AO VIVO</span></div>
         <div className="media-grid" id="mediaGrid" />
         <div className="gesture-layer" id="gestureLayer" aria-live="polite" />
       </div>

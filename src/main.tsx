@@ -42,11 +42,21 @@ async function start() {
     );
   });
 
-  const isLocalShellPreview = ["127.0.0.1", "localhost"].includes(location.hostname)
-    && new URLSearchParams(location.search).has("shell-preview");
-  if (isLocalShellPreview) {
+  const previewParams = new URLSearchParams(location.search);
+  const isLocalPreview = ["127.0.0.1", "localhost"].includes(location.hostname)
+    && (previewParams.has("shell-preview") || previewParams.has("prejoin-preview"));
+  if (isLocalPreview) {
     document.getElementById("authScreen")?.classList.add("hidden");
     document.getElementById("app")?.classList.remove("hidden");
+    if (previewParams.has("prejoin-preview")) {
+      document.getElementById("prejoinModal")?.classList.remove("hidden");
+      const roomName = document.getElementById("prejoinRoomName");
+      const online = document.getElementById("prejoinOnline");
+      const name = document.getElementById("prejoinName") as HTMLInputElement | null;
+      if (roomName) roomName.textContent = "Sala de estudos";
+      if (online) online.textContent = "4 pessoas têm acesso a esta sala.";
+      if (name) name.value = "Felipe";
+    }
     return;
   }
 
