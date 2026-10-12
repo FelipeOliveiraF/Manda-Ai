@@ -14,11 +14,14 @@ Criar uma base moderna e escalável sem interromper as funcionalidades já valid
 - Contrato de compatibilidade que preserva IDs, seletores, Supabase, WebRTC e todos os eventos atuais.
 - Build, verificação de tipos, testes de regressão e preview local automatizados.
 
+## Etapa 2 concluída
+
+- `AppShell`, `Sidebar`, `RoomHeader`, `Stage`, `MediaControls` e `ChatPanel` agora são componentes React nativos.
+- A navegação lateral, o cabeçalho, o estado vazio e o painel de conversa receberam uma camada visual comercial responsiva.
+- Login e modais permanecem isolados em superfícies temporárias de compatibilidade.
+- Um teste compara os IDs do produto original com os IDs renderizados pela nova arquitetura.
+
 ## Próximas etapas
-
-### 2. Shell nativo em React
-
-Migrar a navegação lateral, cabeçalho, lista de salas, estados vazios e estrutura responsiva para componentes React.
 
 ### 3. Experiência de chamada
 

@@ -1,5 +1,12 @@
-import { LegacySurface } from "./LegacySurface";
+import { AuthSurface, LegacyOverlays } from "./LegacySurface";
+import { AppShell } from "./components/shell/AppShell";
 
 export function App() {
-  return <LegacySurface />;
+  return (
+    <div data-react-surface="mostra-ai">
+      <AuthSurface />
+      <AppShell />
+      <LegacyOverlays />
+    </div>
+  );
 }

@@ -10,8 +10,9 @@
     "preview": "node scripts/preview-worker.mjs",
     "typecheck": "npm run prepare:react && tsc --noEmit",
     "check:ui": "node scripts/check-ui.mjs",
+    "check:react": "npm run prepare:react && node scripts/check-react-shell.mjs",
     "validate": "node scripts/validate-artifact.mjs",
-    "check": "npm run typecheck && npm run check:ui && npm run validate"
+    "check": "npm run typecheck && npm run check:ui && npm run check:react && npm run validate"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "1.3.0",

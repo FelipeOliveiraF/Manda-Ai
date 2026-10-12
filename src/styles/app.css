@@ -21,3 +21,174 @@ body,
 [data-react-surface="mostra-ai"] {
   overflow: hidden;
 }
+
+[data-compat-surface="auth"] {
+  height: 100%;
+}
+
+/* Etapa 2 — shell comercial em componentes React */
+[data-component="app-shell"] {
+  grid-template-columns: 292px minmax(0, 1fr);
+  background: var(--color-bg);
+}
+
+[data-component="sidebar"] {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--color-primary) 15%, transparent), transparent 28%),
+    linear-gradient(180deg, #141121 0%, #100e19 100%);
+  border-right-color: var(--color-border);
+  box-shadow: 12px 0 40px #05040a2e;
+}
+
+[data-component="sidebar"]::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(90deg, var(--color-secondary), var(--color-primary), #60a5fa);
+}
+
+[data-component="sidebar"] .sidebar-head {
+  height: 80px;
+  border-bottom: 1px solid #ffffff08;
+}
+
+[data-component="sidebar"] .sidebar-intro {
+  padding-top: 24px;
+}
+
+[data-component="sidebar"] .sidebar-intro h2 {
+  color: var(--color-text);
+  font-size: 18px;
+  letter-spacing: -.025em;
+}
+
+[data-component="sidebar"] .room-search {
+  min-height: 46px;
+  background: #ffffff08;
+  border-color: #ffffff12;
+  box-shadow: 0 1px 0 #ffffff08 inset;
+}
+
+[data-component="sidebar"] .room-search:focus-within {
+  border-color: var(--color-primary-hover);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+
+[data-component="sidebar"] .room-item {
+  border: 1px solid transparent;
+}
+
+[data-component="sidebar"] .room-item:hover {
+  background: #ffffff09;
+  border-color: #ffffff0d;
+}
+
+[data-component="sidebar"] .room-item.active {
+  background: linear-gradient(90deg, var(--color-primary-soft), #ffffff09);
+  border-color: #a78bfa30;
+  box-shadow: 0 8px 24px #00000024;
+}
+
+[data-component="sidebar"] .new-room-button {
+  margin-top: 14px;
+}
+
+[data-component="sidebar"] .account-card {
+  min-height: 72px;
+  background: #ffffff05;
+  border-top-color: #ffffff0d;
+}
+
+[data-component="room-header"] {
+  height: 80px;
+  padding-inline: 28px;
+  background: color-mix(in srgb, var(--color-surface-2) 90%, transparent);
+  border-bottom-color: var(--color-border);
+  box-shadow: 0 8px 30px #05040a21;
+  backdrop-filter: blur(18px);
+}
+
+[data-component="room-header"] .room-header-left strong {
+  font-family: var(--font-display);
+  font-size: 18px;
+  letter-spacing: -.025em;
+}
+
+[data-component="room-header"] .header-room-avatar {
+  border: 1px solid #ffffff14;
+  box-shadow: 0 8px 24px var(--color-primary-soft);
+}
+
+[data-component="stage"] {
+  background:
+    radial-gradient(circle at 50% 25%, color-mix(in srgb, var(--color-primary) 8%, transparent), transparent 38%),
+    var(--color-bg);
+}
+
+[data-component="stage"] .empty-stage {
+  max-width: 580px;
+  width: 100%;
+  margin-inline: auto;
+}
+
+[data-component="stage"] .empty-icon {
+  width: 84px;
+  height: 84px;
+  background: linear-gradient(145deg, #4b2d78, #2a1c45);
+  border: 1px solid #a78bfa30;
+  box-shadow: 0 20px 55px var(--color-primary-soft), 0 1px 0 #ffffff1a inset;
+}
+
+[data-component="stage"] .empty-stage h2 {
+  font-family: var(--font-display);
+  font-size: clamp(24px, 3vw, 32px);
+  letter-spacing: -.045em;
+}
+
+[data-component="chat-panel"] {
+  background: linear-gradient(180deg, #1d1a2a 0%, #17151f 100%);
+  border-left-color: var(--color-border);
+  box-shadow: -12px 0 35px #05040a24;
+}
+
+[data-component="chat-panel"] .chat-head {
+  height: 80px;
+  border-bottom-color: #ffffff0d;
+}
+
+[data-component="chat-panel"] .messages {
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+
+[data-component="chat-panel"] .message-form {
+  background: #ffffff08;
+  border-color: #ffffff12;
+  box-shadow: 0 10px 26px #00000024, 0 1px 0 #ffffff08 inset;
+}
+
+@media (min-width: 981px) and (max-width: 1300px) {
+  [data-component="app-shell"] {
+    grid-template-columns: 256px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 980px) {
+  [data-component="room-header"] {
+    padding-inline: 18px;
+  }
+}
+
+@media (max-width: 720px) {
+  [data-component="app-shell"] {
+    grid-template-columns: 1fr;
+  }
+
+  [data-component="room-header"] {
+    height: 68px;
+    padding-inline: 12px;
+  }
+}
