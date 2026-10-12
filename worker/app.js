@@ -117,12 +117,14 @@ export const appScript = String.raw`
   }
   async function initGoogleButton() {
     if (googleInitialized) return;
+    googleInitialized = true;
     let tries = 0;
     while (!(window.google && google.accounts && google.accounts.id) && tries < 80) {
       await new Promise(function (resolve) { setTimeout(resolve, 100); });
       tries += 1;
     }
     if (!(window.google && google.accounts && google.accounts.id)) {
+      googleInitialized = false;
       $('#authStatus').textContent = 'O login do Google não carregou. Atualize a página.';
       return;
     }
@@ -137,7 +139,6 @@ export const appScript = String.raw`
         if (result.error) $('#authStatus').textContent = 'Não foi possível entrar: ' + result.error.message;
       }
     });
-    googleInitialized = true;
     const slot = $('#googleButton');
     slot.textContent = '';
     google.accounts.id.renderButton(slot, { theme: 'filled_black', size: 'large', shape: 'pill', text: 'continue_with', width: Math.min(400, slot.clientWidth || 400), locale: 'pt-BR' });
