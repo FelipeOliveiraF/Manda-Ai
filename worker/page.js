@@ -1,4 +1,4 @@
-const APP_VERSION = '1.13';
+const APP_VERSION = '1.14';
 
 export const page = `<!doctype html>
 <html lang="pt-BR">
@@ -57,7 +57,7 @@ export const page = `<!doctype html>
         <div class="room-actions">
           <span class="participant-count" id="participantCount">0 online</span>
           <button class="identity-button hidden" id="roomIdentityButton" title="Alterar seu nome nesta sala"><span class="account-avatar" id="roomIdentityAvatar">A</span><span class="identity-copy"><strong id="roomIdentityName">Amigo</strong><small id="roomIdentityRole">membro</small></span></button>
-          <button class="square-button hidden" id="manageRoomButton" title="Gerenciar membros" aria-label="Gerenciar membros"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0112 0v3M17 8v8m-4-4h8"/></svg></button>
+          <button class="square-button hidden" id="manageRoomButton" title="Ver membros da sala" aria-label="Ver membros da sala"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0112 0v3M17 9a3 3 0 010 6m2 1a5 5 0 012 4v1"/></svg></button>
           <button class="square-button hidden" id="roomSettingsButton" title="Personalizar sala" aria-label="Personalizar sala"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 3-1 3-3 1 1 3-2 2 2 2-1 3 3 1 1 3h6l1-3 3-1-1-3 2-2-2-2 1-3-3-1-1-3z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="header-button" id="inviteButton" aria-label="Convidar pessoas" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0112 0v3M16 5a3 3 0 010 6m2 3a5 5 0 013 5v2"/></svg><span>Convidar</span></button>
           <button class="square-button" id="toggleChat" title="Abrir ou fechar chat" aria-label="Abrir ou fechar chat" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11a9 9 0 01-9 9H4l-2 2V11a9 9 0 0118-4"/><path d="M7 9h10M7 13h7"/></svg></button>
         </div>
@@ -175,7 +175,7 @@ export const page = `<!doctype html>
   <div class="modal-backdrop hidden" id="manageRoomModal">
     <div class="modal manage-modal">
       <button class="modal-close" type="button" data-close="manageRoomModal">×</button>
-      <div class="settings-heading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0112 0v3M17 8v8m-4-4h8"/></svg><div><h2>Gerenciar sala</h2><p>Cargos, microfone, tela e acesso.</p></div></div>
+      <div class="settings-heading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0112 0v3M17 9a3 3 0 010 6m2 1a5 5 0 012 4v1"/></svg><div><h2>Membros da sala</h2><p id="memberSummary">Todas as pessoas que têm acesso aparecem aqui.</p></div></div>
       <div class="member-list" id="memberList"></div>
       <p class="form-error" id="manageRoomError" role="alert"></p>
     </div>

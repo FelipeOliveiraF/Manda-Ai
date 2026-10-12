@@ -263,9 +263,25 @@ export const appScript = String.raw`
       const author = document.createElement('strong'); author.textContent = name;
       const time = document.createElement('time'); time.textContent = new Date(item.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       const body = document.createElement('p'); body.textContent = escapeText(item.body);
-      meta.append(author, time); content.append(meta, body); row.append(avatar, content); list.appendChild(row);
+      meta.append(author, time);
+      if (isRoomAdmin()) {
+        const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'message-delete'; remove.title = 'Apagar mensagem'; remove.setAttribute('aria-label', 'Apagar mensagem de ' + name);
+        remove.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 14h8l1-14M10 11v6m4-6v6"/></svg>';
+        remove.addEventListener('click', function () { deleteMessage(item); });
+        meta.append(remove);
+      }
+      content.className = 'message-content'; content.append(meta, body); row.append(avatar, content); list.appendChild(row);
     });
     list.scrollTop = list.scrollHeight;
+  }
+  async function deleteMessage(item) {
+    if (!activeRoom || !activeChannel || !isRoomAdmin()) return;
+    if (!confirm('Apagar esta mensagem? Esta ação não pode ser desfeita.')) return;
+    const roomId = activeRoom.id, channelId = activeChannel.id;
+    const result = await db.from('room_messages').delete().eq('id', item.id).eq('room_id', roomId).eq('channel_id', channelId);
+    if (result.error) { showToast('Não consegui apagar esta mensagem.'); return; }
+    if (activeRoom?.id === roomId && activeChannel?.id === channelId) await loadMessages();
+    showToast('Mensagem apagada.');
   }
   function subscribeChat() {
     resetChat();
@@ -282,6 +298,12 @@ export const appScript = String.raw`
       button.addEventListener('click', function () { selectChannel(channel); });
       tabs.appendChild(button);
     });
+    if (activeMembership) {
+      const members = document.createElement('button'); members.type = 'button'; members.className = 'channel-tab members-tab';
+      members.textContent = 'Membros (' + roomMembers.size + ')'; members.title = 'Ver todas as pessoas com acesso';
+      members.addEventListener('click', function () { renderMemberManagement(); $('#manageRoomError').textContent = ''; openModal('manageRoomModal'); });
+      tabs.appendChild(members);
+    }
     if (isRoomAdmin()) {
       const add = document.createElement('button'); add.type = 'button'; add.className = 'channel-add'; add.textContent = '+'; add.title = 'Criar chat de texto'; add.setAttribute('aria-label', 'Criar chat de texto');
       add.addEventListener('click', function () { $('#channelNameInput').value = ''; $('#channelError').textContent = ''; openModal('channelModal'); });
@@ -774,6 +796,8 @@ export const appScript = String.raw`
       const weight = { owner: 0, admin: 1, member: 2 };
       return (weight[a.role] - weight[b.role]) || a.display_name.localeCompare(b.display_name, 'pt-BR');
     });
+    const onlineIds = new Set(peerUserIds.values()); if (currentUser?.id) onlineIds.add(currentUser.id);
+    $('#memberSummary').textContent = members.length + (members.length === 1 ? ' pessoa tem acesso a esta sala.' : ' pessoas têm acesso a esta sala.') + (isRoomAdmin() ? ' Você pode gerenciar as permissões abaixo.' : '');
     members.forEach(function (member) {
       const row = document.createElement('article'); row.className = 'member-row';
       const profile = memberProfiles.get(member.user_id) || {};
@@ -781,7 +805,10 @@ export const appScript = String.raw`
       const avatar = document.createElement('span'); avatar.className = 'account-avatar'; setAvatar(avatar, member.display_name, profile.avatar_url || '');
       const copy = document.createElement('div'); copy.className = 'member-person-copy';
       const name = document.createElement('strong'); name.textContent = member.display_name + (member.user_id === currentUser.id ? ' (você)' : '');
-      const badge = document.createElement('small'); badge.className = 'role-badge ' + member.role; badge.textContent = roleLabel(member.role);
+      const badge = document.createElement('small'); badge.className = 'role-badge ' + member.role;
+      const joined = member.last_joined_at ? new Date(member.last_joined_at).toLocaleDateString('pt-BR') : '';
+      const online = onlineIds.has(member.user_id); badge.classList.toggle('online', online);
+      badge.textContent = roleLabel(member.role) + (online ? ' · online' : joined ? ' · último acesso em ' + joined : '');
       copy.append(name, badge); person.append(avatar, copy); row.append(person);
 
       const actions = document.createElement('div'); actions.className = 'member-actions';
@@ -839,7 +866,7 @@ export const appScript = String.raw`
     if(!activeRoom)return;
     setAvatar($('#headerRoomAvatar'),activeRoom.name,activeRoom.avatar_url);
     $('#roomSettingsButton').classList.toggle('hidden',activeRoom.owner_id!==currentUser.id);
-    $('#manageRoomButton').classList.toggle('hidden',!isRoomAdmin());
+    $('#manageRoomButton').classList.toggle('hidden',!activeMembership);
     $('#roomIdentityButton').classList.toggle('hidden',!activeMembership);
     $('#roomIdentityName').textContent=roomUserName();$('#roomIdentityRole').textContent=roleLabel(activeMembership?.role);setAvatar($('#roomIdentityAvatar'),roomUserName(),ownProfile?.avatar_url||'');
     $('#clearChannel').classList.toggle('hidden',!isRoomAdmin());
