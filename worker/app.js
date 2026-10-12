@@ -24,6 +24,11 @@ export const appScript = String.raw`
   const roomMembers = new Map();
   let roomChannels = [];
   let activeChannel = null;
+  let currentMessages = [];
+  let replyingTo = null;
+  let pendingJoinRoom = null;
+  let pendingJoinMembership = null;
+  let prejoinStream = null;
   let pendingInvite = new URLSearchParams(location.search).get('invite') || '';
   let chatChannel = null;
   let roomControlChannel = null;
@@ -45,6 +50,8 @@ export const appScript = String.raw`
   const incomingCalls = new Map();
   const remoteStreams = new Map();
   const remoteKinds = new Map();
+  const speakingMonitors = new Map();
+  let speakingContext = null;
 
   function initials(name) {
     return String(name || 'Amigo').trim().split(/\s+/).slice(0, 2).map(function (part) { return part[0] || ''; }).join('').toUpperCase() || '?';
@@ -77,6 +84,7 @@ export const appScript = String.raw`
   function closeModal(id) {
     $('#' + id).classList.add('hidden');
     if (id === 'devicesModal') stopPreviews();
+    if (id === 'prejoinModal') stopPrejoin();
     modalReturnFocus?.focus();
   }
   function setAvatar(element, name, url) {
@@ -203,17 +211,49 @@ export const appScript = String.raw`
     await loadRooms(room && room.id);
   }
 
+  async function openInviteManager() {
+    if (!activeRoom) return;
+    $('#inviteLinkResult').classList.add('hidden'); $('#inviteLink').value = ''; $('#inviteManageError').textContent = '';
+    $('#inviteHistory').classList.toggle('hidden', !isRoomAdmin());
+    openModal('inviteModal');
+    if (isRoomAdmin()) await loadInvites();
+  }
   async function createInvite() {
     if (!activeRoom) return;
-    const button = $('#inviteButton');
-    const original = button.innerHTML;
-    button.disabled = true; button.textContent = 'Gerando…';
-    const result = await db.rpc('create_room_invite', { p_room_id: activeRoom.id });
-    button.disabled = false; button.innerHTML = original;
-    if (result.error || !result.data || !result.data.length) { showToast('Não consegui criar o convite.'); return; }
-    const link = location.origin + location.pathname + '?invite=' + encodeURIComponent(result.data[0].token);
-    $('#inviteLink').value = link;
-    openModal('inviteModal');
+    const button = $('#generateInvite'), expiryValue = $('#inviteExpiry').value;
+    button.disabled = true; button.textContent = 'Gerando…'; $('#inviteManageError').textContent = '';
+    const result = await db.rpc('create_room_invite_with_expiry', { p_room_id: activeRoom.id, p_expires_in_hours: expiryValue ? Number(expiryValue) : null });
+    button.disabled = false; button.textContent = 'Gerar convite';
+    const invite = Array.isArray(result.data) ? result.data[0] : result.data;
+    if (result.error || !invite?.token) { $('#inviteManageError').textContent = 'Não consegui criar o convite.'; return; }
+    $('#inviteLink').value = location.origin + location.pathname + '?invite=' + encodeURIComponent(invite.token);
+    $('#inviteLinkResult').classList.remove('hidden');
+    if (isRoomAdmin()) await loadInvites();
+  }
+  async function loadInvites() {
+    if (!activeRoom || !isRoomAdmin()) return;
+    const roomId = activeRoom.id, list = $('#inviteList'); list.innerHTML = '<p class="form-help">Carregando convites…</p>';
+    const result = await db.rpc('list_room_invites', { p_room_id: roomId });
+    if (result.error || activeRoom?.id !== roomId) { list.innerHTML = '<p class="form-error">Não consegui carregar os convites.</p>'; return; }
+    list.textContent = '';
+    (result.data || []).forEach(function (invite) {
+      const row = document.createElement('article'); row.className = 'invite-row';
+      const copy = document.createElement('div');
+      const title = document.createElement('strong');
+      const expired = invite.expires_at && new Date(invite.expires_at) <= new Date(), revoked = Boolean(invite.revoked_at);
+      title.textContent = revoked ? 'Revogado' : expired ? 'Expirado' : 'Ativo'; title.className = revoked || expired ? 'inactive' : 'active';
+      const detail = document.createElement('small'); detail.textContent = 'Criado por ' + (invite.creator_name || 'Amigo') + ' · ' + invite.use_count + (invite.use_count === 1 ? ' uso' : ' usos') + (invite.expires_at ? ' · vence ' + new Date(invite.expires_at).toLocaleDateString('pt-BR') : ' · sem expiração');
+      copy.append(title, detail); row.append(copy);
+      if (!revoked && !expired) { const revoke = document.createElement('button'); revoke.type = 'button'; revoke.className = 'secondary-button danger-outline'; revoke.textContent = 'Revogar'; revoke.addEventListener('click', function () { revokeInvite(invite.id); }); row.append(revoke); }
+      list.appendChild(row);
+    });
+    if (!result.data?.length) list.innerHTML = '<p class="form-help">Nenhum convite criado ainda.</p>';
+  }
+  async function revokeInvite(inviteId) {
+    if (!confirm('Revogar este convite? Quem ainda não entrou perderá o acesso pelo link.')) return;
+    const result = await db.rpc('revoke_room_invite', { p_invite_id: inviteId });
+    if (result.error) { showToast('Não consegui revogar o convite.'); return; }
+    await loadInvites(); showToast('Convite revogado.');
   }
   async function acceptInvite() {
     const button = $('#acceptInvite');
@@ -237,26 +277,42 @@ export const appScript = String.raw`
   function resetChat() {
     if (chatChannel) db.removeChannel(chatChannel);
     chatChannel = null;
+    currentMessages = []; clearReply(); $('#pinnedPanel').classList.add('hidden'); $('#pinnedMessages').textContent = '';
     $('#messages').innerHTML = '<div class="chat-empty"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-1 2V11.5a8.5 8.5 0 0 1 18 0Z"/><path d="M7 9h10M7 13h6"/></svg></span><strong>O chat começa aqui</strong><small>As mensagens desta sala aparecem para todos os membros.</small></div>';
   }
   async function loadMessages() {
     if (!activeRoom || !activeChannel) return;
     const roomId = activeRoom.id, channelId = activeChannel.id;
-    const result = await db.from('room_messages').select('id,body,created_at,user_id,channel_id,profiles(display_name,avatar_url)').eq('channel_id', channelId).order('created_at', { ascending: true }).limit(200);
+    const result = await db.from('room_messages').select('id,body,created_at,user_id,channel_id,reply_to_id,pinned_at,pinned_by,profiles(display_name,avatar_url)').eq('channel_id', channelId).order('created_at', { ascending: true }).limit(200);
     if (result.error || !activeRoom || activeRoom.id !== roomId || !activeChannel || activeChannel.id !== channelId) return;
-    renderMessages(result.data || []);
+    const ids = (result.data || []).map(function (item) { return item.id; });
+    const reactions = ids.length ? await db.from('room_message_reactions').select('id,message_id,user_id,emoji').eq('channel_id', channelId).in('message_id', ids) : { data: [] };
+    if (!activeRoom || activeRoom.id !== roomId || !activeChannel || activeChannel.id !== channelId) return;
+    renderMessages(result.data || [], reactions.data || []);
   }
-  function renderMessages(items) {
+  function messageAuthor(item) {
+    const profile = item.profiles || {}, membership = roomMembers.get(item.user_id);
+    return membership?.display_name || profile.display_name || (item.user_id === currentUser.id ? roomUserName() : 'Amigo');
+  }
+  function renderPinnedMessages(items) {
+    const pinned = items.filter(function (item) { return item.pinned_at; }), panel = $('#pinnedPanel'), list = $('#pinnedMessages'); list.textContent = '';
+    panel.classList.toggle('hidden', !pinned.length);
+    pinned.forEach(function (item) { const button = document.createElement('button'); button.type = 'button'; button.textContent = messageAuthor(item) + ': ' + item.body.slice(0, 90); button.addEventListener('click', function () { document.querySelector('[data-message-id="' + item.id + '"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }); list.appendChild(button); });
+  }
+  function renderMessages(items, reactions) {
+    currentMessages = items; renderPinnedMessages(items);
     const list = $('#messages'); list.textContent = '';
     if (!items.length) {
       list.innerHTML = '<div class="chat-empty"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-1 2V11.5a8.5 8.5 0 0 1 18 0Z"/><path d="M7 9h10M7 13h6"/></svg></span><strong>O chat começa aqui</strong><small>Mande a primeira mensagem para a sala.</small></div>';
       return;
     }
+    const byId = new Map(items.map(function (item) { return [item.id, item]; }));
+    const reactionsByMessage = new Map();
+    reactions.forEach(function (reaction) { const group = reactionsByMessage.get(reaction.message_id) || []; group.push(reaction); reactionsByMessage.set(reaction.message_id, group); });
     items.forEach(function (item) {
       const profile = item.profiles || {};
-      const membership = roomMembers.get(item.user_id);
-      const name = membership?.display_name || profile.display_name || (item.user_id === currentUser.id ? roomUserName() : 'Amigo');
-      const row = document.createElement('article'); row.className = 'message';
+      const name = messageAuthor(item);
+      const row = document.createElement('article'); row.className = 'message' + (item.pinned_at ? ' pinned' : ''); row.dataset.messageId = item.id;
       const avatar = document.createElement('span'); avatar.className = 'message-avatar'; setAvatar(avatar, name, profile.avatar_url || '');
       const content = document.createElement('div');
       const meta = document.createElement('div'); meta.className = 'message-meta';
@@ -264,15 +320,42 @@ export const appScript = String.raw`
       const time = document.createElement('time'); time.textContent = new Date(item.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       const body = document.createElement('p'); body.textContent = escapeText(item.body);
       meta.append(author, time);
+      if (item.pinned_at) { const pinMark = document.createElement('span'); pinMark.className = 'pin-mark'; pinMark.textContent = '📌 fixada'; meta.append(pinMark); }
+      const actions = document.createElement('div'); actions.className = 'message-actions';
+      const reply = document.createElement('button'); reply.type = 'button'; reply.title = 'Responder'; reply.textContent = '↩'; reply.addEventListener('click', function () { setReply(item); }); actions.append(reply);
+      const react = document.createElement('button'); react.type = 'button'; react.title = 'Reagir'; react.textContent = '☺'; react.addEventListener('click', function () { const emoji = prompt('Digite um emoji para reagir:', '👍'); if (emoji) toggleReaction(item, emoji.trim().slice(0, 16)); }); actions.append(react);
       if (isRoomAdmin()) {
+        const pin = document.createElement('button'); pin.type = 'button'; pin.title = item.pinned_at ? 'Desafixar mensagem' : 'Fixar mensagem'; pin.textContent = '📌'; pin.addEventListener('click', function () { setMessagePinned(item, !item.pinned_at); }); actions.append(pin);
         const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'message-delete'; remove.title = 'Apagar mensagem'; remove.setAttribute('aria-label', 'Apagar mensagem de ' + name);
         remove.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 14h8l1-14M10 11v6m4-6v6"/></svg>';
         remove.addEventListener('click', function () { deleteMessage(item); });
-        meta.append(remove);
+        actions.append(remove);
       }
-      content.className = 'message-content'; content.append(meta, body); row.append(avatar, content); list.appendChild(row);
+      meta.append(actions);
+      content.className = 'message-content'; content.append(meta);
+      const parent = byId.get(item.reply_to_id);
+      if (parent) { const quote = document.createElement('button'); quote.type = 'button'; quote.className = 'reply-quote'; quote.textContent = '↩ ' + messageAuthor(parent) + ': ' + parent.body.slice(0, 100); quote.addEventListener('click', function () { document.querySelector('[data-message-id="' + parent.id + '"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }); content.append(quote); }
+      content.append(body);
+      const reactionBar = document.createElement('div'); reactionBar.className = 'reaction-bar';
+      const grouped = new Map(); (reactionsByMessage.get(item.id) || []).forEach(function (reaction) { const group = grouped.get(reaction.emoji) || []; group.push(reaction); grouped.set(reaction.emoji, group); });
+      grouped.forEach(function (group, emoji) { const button = document.createElement('button'); button.type = 'button'; button.className = 'reaction-chip' + (group.some(function (reaction) { return reaction.user_id === currentUser.id; }) ? ' mine' : ''); button.textContent = emoji + ' ' + group.length; button.addEventListener('click', function () { toggleReaction(item, emoji); }); reactionBar.appendChild(button); });
+      if (grouped.size) content.append(reactionBar);
+      row.append(avatar, content); list.appendChild(row);
     });
     list.scrollTop = list.scrollHeight;
+  }
+  function setReply(item) { replyingTo = item; $('#replyName').textContent = messageAuthor(item); $('#replyText').textContent = item.body.slice(0, 120); $('#replyPreview').classList.remove('hidden'); $('#messageInput').focus(); }
+  function clearReply() { replyingTo = null; $('#replyPreview').classList.add('hidden'); $('#replyName').textContent = 'alguém'; $('#replyText').textContent = ''; }
+  async function toggleReaction(item, emoji) {
+    if (!emoji || !activeRoom || !activeChannel) return;
+    const existing = await db.from('room_message_reactions').select('id').eq('message_id', item.id).eq('user_id', currentUser.id).eq('emoji', emoji).maybeSingle();
+    const result = existing.data ? await db.from('room_message_reactions').delete().eq('id', existing.data.id) : await db.from('room_message_reactions').insert({ room_id: activeRoom.id, channel_id: activeChannel.id, message_id: item.id, user_id: currentUser.id, emoji: emoji });
+    if (result.error) showToast('Não consegui salvar sua reação.'); else await loadMessages();
+  }
+  async function setMessagePinned(item, pinned) {
+    const result = await db.rpc('set_message_pinned', { p_message_id: item.id, p_pinned: pinned });
+    if (result.error) { showToast('Não consegui alterar a mensagem fixada.'); return; }
+    await loadMessages(); showToast(pinned ? 'Mensagem fixada.' : 'Mensagem desafixada.');
   }
   async function deleteMessage(item) {
     if (!activeRoom || !activeChannel || !isRoomAdmin()) return;
@@ -287,7 +370,10 @@ export const appScript = String.raw`
     resetChat();
     if (!activeRoom || !activeChannel) return;
     const channelId = activeChannel.id;
-    chatChannel = db.channel('room-chat-' + channelId).on('postgres_changes', { event: '*', schema: 'public', table: 'room_messages', filter: 'channel_id=eq.' + channelId }, function () { loadMessages(); }).subscribe();
+    chatChannel = db.channel('room-chat-' + channelId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_messages', filter: 'channel_id=eq.' + channelId }, function () { loadMessages(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_message_reactions', filter: 'channel_id=eq.' + channelId }, function () { loadMessages(); })
+      .subscribe();
     loadMessages();
   }
   function renderChannels() {
@@ -312,6 +398,7 @@ export const appScript = String.raw`
   }
   function selectChannel(channel) {
     activeChannel = channel;
+    clearReply();
     $('#activeChannelName').textContent = '# ' + channel.name;
     $('#messageInput').placeholder = 'Mensagem em #' + channel.name;
     renderChannels(); subscribeChat();
@@ -349,8 +436,9 @@ export const appScript = String.raw`
     const body = input.value.trim();
     if (!activeRoom || !activeChannel || !body) return;
     input.value = '';
-    const result = await db.from('room_messages').insert({ room_id: activeRoom.id, channel_id: activeChannel.id, user_id: currentUser.id, body: body });
-    if (result.error) { input.value = body; showToast('Não consegui enviar a mensagem.'); }
+    const replyId = replyingTo?.id || null;
+    const result = await db.from('room_messages').insert({ room_id: activeRoom.id, channel_id: activeChannel.id, user_id: currentUser.id, body: body, reply_to_id: replyId });
+    if (result.error) { input.value = body; showToast('Não consegui enviar a mensagem.'); } else clearReply();
   }
 
   async function roomPeerId(room) {
@@ -372,6 +460,28 @@ export const appScript = String.raw`
     return 'none';
   }
   function findTile(peerId) { return Array.from($('#mediaGrid').children).find(function (tile) { return tile.dataset.peerId === peerId; }); }
+  function stopSpeakingMonitor(peerId) {
+    const monitor = speakingMonitors.get(peerId); if (!monitor) return;
+    cancelAnimationFrame(monitor.frame); try { monitor.source.disconnect(); monitor.analyser.disconnect(); } catch (_) {}
+    speakingMonitors.delete(peerId); findTile(peerId)?.classList.remove('speaking');
+  }
+  function watchSpeaking(peerId, stream) {
+    const track = stream?.getAudioTracks().find(function (item) { return item.readyState === 'live'; });
+    if (!track) { stopSpeakingMonitor(peerId); return; }
+    if (speakingMonitors.get(peerId)?.track === track) return;
+    stopSpeakingMonitor(peerId);
+    const AudioCtx = window.AudioContext || window.webkitAudioContext; if (!AudioCtx) return;
+    speakingContext = speakingContext || new AudioCtx(); speakingContext.resume().catch(function () {});
+    const source = speakingContext.createMediaStreamSource(new MediaStream([track])), analyser = speakingContext.createAnalyser(); analyser.fftSize = 256; source.connect(analyser);
+    const data = new Uint8Array(analyser.fftSize), monitor = { track: track, source: source, analyser: analyser, frame: 0, loud: 0 }; speakingMonitors.set(peerId, monitor);
+    function measure() {
+      if (speakingMonitors.get(peerId) !== monitor || track.readyState !== 'live') { stopSpeakingMonitor(peerId); return; }
+      analyser.getByteTimeDomainData(data); let sum = 0; for (const value of data) sum += Math.pow((value - 128) / 128, 2);
+      const active = Math.sqrt(sum / data.length) > 0.035; monitor.loud = active ? Math.min(4, monitor.loud + 1) : Math.max(0, monitor.loud - 1);
+      findTile(peerId)?.classList.toggle('speaking', monitor.loud >= 2); monitor.frame = requestAnimationFrame(measure);
+    }
+    measure();
+  }
   function fullscreenElement() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
   function toggleTileFocus(tile) {
     const grid = $('#mediaGrid'), active = tile.classList.contains('focused');
@@ -478,6 +588,7 @@ export const appScript = String.raw`
       video.volume = Number(slider.value); video.muted = local || tile.dataset.audioMuted === 'true';
       video.style.display = hasVideo ? 'block' : 'none'; avatar.style.display = hasVideo ? 'none' : 'grid'; video.play().catch(function () {});
     } else { video.srcObject = null; video.style.display = 'none'; avatar.style.display = 'grid'; }
+    watchSpeaking(peerId, local && microphoneTrack ? new MediaStream([microphoneTrack]) : stream);
     mute.setAttribute('aria-label', video.muted ? 'Reativar áudio de ' + name : 'Silenciar áudio de ' + name);
     updateFullscreenButtons();
   }
@@ -487,14 +598,14 @@ export const appScript = String.raw`
       const kind = peer && id === peer.id ? localKind() : remoteKinds.get(id) || 'none';
       ensureTile(id, name, stream, kind, Boolean(peer && id === peer.id));
     });
-    Array.from($('#mediaGrid').children).forEach(function (tile) { if (!roster.has(tile.dataset.peerId)) tile.remove(); });
+    Array.from($('#mediaGrid').children).forEach(function (tile) { if (!roster.has(tile.dataset.peerId)) { stopSpeakingMonitor(tile.dataset.peerId); tile.remove(); } });
     $('#participantCount').textContent = roster.size + (roster.size === 1 ? ' online' : ' online');
   }
   function applyRoster(items) {
     memberProfiles.clear();
     const activeIds = new Set(items.map(function (item) { return item.id; }));
     roster.forEach(function (_, id) {
-      if (!activeIds.has(id)) { remoteStreams.delete(id); remoteKinds.delete(id); findTile(id)?.remove(); }
+      if (!activeIds.has(id)) { remoteStreams.delete(id); remoteKinds.delete(id); stopSpeakingMonitor(id); findTile(id)?.remove(); }
     });
     roster.clear(); items.forEach(function (item) { roster.set(item.id, String(item.name || 'Amigo').slice(0, 60)); if (item.userId) peerUserIds.set(item.id,item.userId); }); renderRoster();
     loadMemberProfiles();
@@ -504,6 +615,23 @@ export const appScript = String.raw`
     const payload = { type: 'roster', items: Array.from(roster, function (entry) { return { id: entry[0], name: entry[1], userId: peerUserIds.get(entry[0]) }; }) };
     dataConnections.forEach(function (connection) { if (connection.open) connection.send(payload); });
     applyRoster(payload.items);
+  }
+  function showRoomGesture(payload) {
+    if (!payload?.emoji) return;
+    const bubble = document.createElement('div'); bubble.className = 'gesture-bubble';
+    const emoji = document.createElement('span'); emoji.textContent = String(payload.emoji).slice(0, 16);
+    const name = document.createElement('small'); name.textContent = String(payload.name || 'Amigo').slice(0, 60);
+    bubble.append(emoji, name); $('#gestureLayer').appendChild(bubble);
+    setTimeout(function () { bubble.classList.add('leaving'); }, 3200); setTimeout(function () { bubble.remove(); }, 3900);
+  }
+  function relayGesture(payload) {
+    const safe = { type: 'gesture', emoji: String(payload.emoji || '').slice(0, 16), name: String(payload.name || 'Amigo').slice(0, 60) };
+    if (!safe.emoji) return; showRoomGesture(safe); dataConnections.forEach(function (connection) { if (connection.open) connection.send(safe); });
+  }
+  function sendGesture(emoji) {
+    const payload = { type: 'gesture', emoji: String(emoji || '').trim().slice(0, 16), name: roomUserName() }; if (!payload.emoji || !activeRoom) return;
+    $('#gestureMenu').classList.add('hidden'); $('#gestureButton').setAttribute('aria-expanded', 'false');
+    if (isCoordinator) relayGesture(payload); else if (coordinatorConnection?.open) coordinatorConnection.send(payload); else showToast('Entre completamente na sala para reagir.');
   }
   function callPeer(peerId) {
     const stream = outgoingStream();
@@ -536,7 +664,10 @@ export const appScript = String.raw`
     peer.on('connection', function (connection) {
       dataConnections.set(connection.peer, connection); if(connection.metadata?.userId) peerUserIds.set(connection.peer,connection.metadata.userId);
       connection.on('open', function () { roster.set(connection.peer, String(connection.metadata && connection.metadata.nickname || 'Amigo').slice(0, 60)); broadcastRoster(); });
-      connection.on('data', function (data) { if (data && data.type === 'intro') { roster.set(connection.peer, String(data.nickname || 'Amigo').slice(0, 60)); broadcastRoster(); } });
+      connection.on('data', function (data) {
+        if (data && data.type === 'intro') { roster.set(connection.peer, String(data.nickname || 'Amigo').slice(0, 60)); broadcastRoster(); }
+        else if (data && data.type === 'gesture') relayGesture({ emoji: data.emoji, name: roster.get(connection.peer) || 'Amigo' });
+      });
       connection.on('close', function () { dataConnections.delete(connection.peer); roster.delete(connection.peer); remoteStreams.delete(connection.peer); remoteKinds.delete(connection.peer); broadcastRoster(); });
     });
   }
@@ -547,7 +678,7 @@ export const appScript = String.raw`
       const connection = memberPeer.connect(coordinatorId, { reliable: true, metadata: { nickname: roomUserName(), userId: currentUser.id } }); coordinatorConnection = connection;
       const timeout = setTimeout(function () { if (!connection.open) setConnection('Não consegui encontrar a sala', false); }, 9000);
       connection.on('open', function () { clearTimeout(timeout); setConnection('Sala conectada', true); connection.send({ type: 'intro', nickname: roomUserName() }); });
-      connection.on('data', function (data) { if (data && data.type === 'roster' && Array.isArray(data.items)) applyRoster(data.items); });
+      connection.on('data', function (data) { if (data && data.type === 'roster' && Array.isArray(data.items)) applyRoster(data.items); else if (data && data.type === 'gesture') showRoomGesture(data); });
       connection.on('close', function () { if (!leaving) setConnection('A conexão da sala caiu. Entre novamente.', false); });
     });
     memberPeer.on('error', function (error) { if (!leaving && error.type === 'peer-unavailable') setConnection('A sala ainda está abrindo. Tente sair e entrar novamente.', false); });
@@ -569,6 +700,7 @@ export const appScript = String.raw`
   }
   function cleanupPeer() {
     leaving = true; stopMedia();
+    Array.from(speakingMonitors.keys()).forEach(stopSpeakingMonitor); if (speakingContext) speakingContext.close().catch(function () {}); speakingContext = null;
     outgoingCalls.forEach(function (call) { call.close(); }); incomingCalls.forEach(function (call) { call.close(); }); dataConnections.forEach(function (connection) { connection.close(); });
     coordinatorConnection?.close(); peer?.destroy(); peer = null; coordinatorConnection = null; isCoordinator = false;
     roster.clear(); peerUserIds.clear(); memberProfiles.clear(); dataConnections.clear(); outgoingCalls.clear(); incomingCalls.clear(); remoteStreams.clear(); remoteKinds.clear(); $('#mediaGrid').textContent = ''; leaving = false; updateMediaButtons();
@@ -648,11 +780,63 @@ export const appScript = String.raw`
     } catch (_) { showToast('O compartilhamento foi cancelado.'); }
   }
 
+  function updatePrejoinPreview() {
+    const video = $('#prejoinVideo'), avatar = $('#prejoinAvatar'), camera = prejoinStream?.getVideoTracks().find(function (track) { return track.readyState === 'live'; }), mic = prejoinStream?.getAudioTracks().find(function (track) { return track.readyState === 'live'; });
+    video.srcObject = camera ? new MediaStream([camera]) : null; video.classList.toggle('hidden', !camera); avatar.classList.toggle('hidden', Boolean(camera));
+    $('#prejoinStatus').textContent = camera ? (mic ? 'Câmera e microfone ligados' : 'Câmera ligada · microfone desligado') : (mic ? 'Microfone ligado · câmera desligada' : 'Câmera e microfone desligados');
+    $('#prejoinMic').textContent = mic ? '🎙️ Microfone ligado' : '🎙️ Microfone desligado'; $('#prejoinMic').setAttribute('aria-pressed', String(Boolean(mic))); $('#prejoinMic').classList.toggle('active', Boolean(mic));
+    $('#prejoinCamera').textContent = camera ? '📷 Câmera ligada' : '📷 Câmera desligada'; $('#prejoinCamera').setAttribute('aria-pressed', String(Boolean(camera))); $('#prejoinCamera').classList.toggle('active', Boolean(camera));
+  }
+  function stopPrejoin() { if (prejoinStream) prejoinStream.getTracks().forEach(function (track) { track.stop(); }); prejoinStream = null; pendingJoinRoom = null; pendingJoinMembership = null; $('#prejoinVideo').srcObject = null; updatePrejoinPreview(); }
+  async function populatePrejoinDevices() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const fill = function (select, kind, saved, fallback) { select.innerHTML = '<option value="">' + fallback + '</option>'; devices.filter(function (item) { return item.kind === kind; }).forEach(function (item, index) { const option = document.createElement('option'); option.value = item.deviceId; option.textContent = item.label || fallback + ' ' + (index + 1); select.appendChild(option); }); select.value = Array.from(select.options).some(function (option) { return option.value === saved; }) ? saved : ''; };
+      fill($('#prejoinMicSelect'), 'audioinput', micDevice, 'Microfone padrão'); fill($('#prejoinCameraSelect'), 'videoinput', cameraDevice, 'Câmera padrão');
+    } catch (_) {}
+  }
+  async function togglePrejoinMedia(kind) {
+    if (!pendingJoinRoom) return; $('#prejoinError').textContent = '';
+    const isMic = kind === 'mic', existing = isMic ? prejoinStream?.getAudioTracks()[0] : prejoinStream?.getVideoTracks()[0];
+    if (existing) { existing.stop(); prejoinStream.removeTrack(existing); updatePrejoinPreview(); return; }
+    if (isMic && pendingJoinMembership?.is_muted) { $('#prejoinError').textContent = 'Seu microfone está bloqueado pela administração desta sala.'; return; }
+    try {
+      const device = isMic ? $('#prejoinMicSelect').value : $('#prejoinCameraSelect').value;
+      const constraints = isMic ? { audio: Object.assign({ echoCancellation: true, noiseSuppression: true }, device ? { deviceId: { exact: device } } : {}), video: false } : { audio: false, video: Object.assign({ width: { ideal: 1280 }, height: { ideal: 720 } }, device ? { deviceId: { exact: device } } : {}) };
+      const acquired = await navigator.mediaDevices.getUserMedia(constraints); if (!pendingJoinRoom) { acquired.getTracks().forEach(function (track) { track.stop(); }); return; }
+      prejoinStream = prejoinStream || new MediaStream(); acquired.getTracks().forEach(function (track) { prejoinStream.addTrack(track); });
+      if (isMic) { micDevice = device; localStorage.setItem('mostra-microphone', device); } else { cameraDevice = device; localStorage.setItem('mostra-camera', device); }
+      await populatePrejoinDevices(); updatePrejoinPreview();
+    } catch (error) { $('#prejoinError').textContent = mediaError(error); }
+  }
   async function openRoom(room) {
     if (activeRoom && activeRoom.id === room.id) { $('#sidebar').classList.remove('open'); return; }
+    stopPrejoin(); pendingJoinRoom = room; $('#prejoinRoomName').textContent = room.name; $('#prejoinError').textContent = ''; $('#prejoinName').value = userName(); setAvatar($('#prejoinAvatar'), userName(), avatarUrl());
+    const membership = await db.from('room_members').select('room_id,user_id,role,display_name,is_muted,can_share_screen').eq('room_id', room.id).eq('user_id', currentUser.id).maybeSingle();
+    if (pendingJoinRoom?.id !== room.id) return;
+    if (membership.error || !membership.data) { pendingJoinRoom = null; showToast('Você não tem mais acesso a esta sala.'); await loadRooms(); return; }
+    pendingJoinMembership = membership.data; $('#prejoinName').value = membership.data.display_name || userName(); setAvatar($('#prejoinAvatar'), $('#prejoinName').value, avatarUrl()); $('#prejoinMic').disabled = Boolean(membership.data.is_muted);
+    const memberCount = await db.from('room_members').select('user_id', { count: 'exact', head: true }).eq('room_id', room.id); $('#prejoinOnline').textContent = (memberCount.count || 1) + ((memberCount.count || 1) === 1 ? ' pessoa tem acesso a esta sala.' : ' pessoas têm acesso a esta sala.');
+    await populatePrejoinDevices(); updatePrejoinPreview(); openModal('prejoinModal'); $('#sidebar').classList.remove('open');
+  }
+  async function confirmPrejoin() {
+    const room = pendingJoinRoom, name = $('#prejoinName').value.trim(); if (!room || !name) { $('#prejoinError').textContent = 'Escolha o nome que você vai usar nesta sala.'; return; }
+    const button = $('#confirmPrejoin'); button.disabled = true; button.textContent = 'Entrando…';
+    if (name !== pendingJoinMembership?.display_name) { const saved = await db.rpc('update_room_nickname', { p_room_id: room.id, p_display_name: name }); if (saved.error) { $('#prejoinError').textContent = 'Não consegui salvar seu nome nesta sala.'; button.disabled = false; button.textContent = 'Entrar na sala'; return; } }
+    const joinStream = prejoinStream; prejoinStream = null; pendingJoinRoom = null; pendingJoinMembership = null; $('#prejoinModal').classList.add('hidden'); $('#prejoinVideo').srcObject = null;
+    button.disabled = false; button.textContent = 'Entrar na sala'; await enterRoom(room, joinStream);
+  }
+  async function enterRoom(room, joinStream) {
     cleanupPeer();
     stopRoomControls();
     activeRoom = room; activeMembership = null; roomMembers.clear(); roomChannels = []; activeChannel = null; resetChat(); renderRooms(); updateRoomHeading();
+    if (joinStream) {
+      microphoneTrack = joinStream.getAudioTracks()[0] || null; cameraTrack = joinStream.getVideoTracks()[0] || null;
+      const joinedMic = microphoneTrack, joinedCamera = cameraTrack;
+      joinedMic?.addEventListener('ended', function () { if (microphoneTrack === joinedMic) { microphoneTrack = null; refreshPublishing(); } });
+      joinedCamera?.addEventListener('ended', function () { if (cameraTrack === joinedCamera) { cameraTrack = null; refreshPublishing(); } });
+      updateMediaButtons();
+    }
     $('#emptyStage').classList.add('hidden'); $('#mediaStage').classList.remove('hidden'); $('#mediaControls').classList.remove('hidden');
     $('#roomTitle').textContent = room.name; $('#roomSubtitle').textContent = 'Sala ' + room.code; $('#chatRoomName').textContent = room.name;
     $('#inviteButton').disabled = false; $('#messageInput').disabled = true; $('#sendMessage').disabled = true; $('#messageInput').placeholder = 'Carregando chats…';
@@ -679,7 +863,7 @@ export const appScript = String.raw`
     if (pendingInvite) await loadInvitePreview();
   }
   async function bootSignedOut() {
-    currentUser = null; ownProfile=null; stopPreviews(); stopRoomControls(); resetChat(); document.querySelectorAll('.modal-backdrop').forEach(m=>m.classList.add('hidden')); cleanupPeer(); activeRoom = null; $('#app').classList.add('hidden'); $('#authScreen').classList.remove('hidden'); await loadInvitePreview(); await initGoogleButton();
+    currentUser = null; ownProfile=null; stopPreviews(); stopPrejoin(); stopRoomControls(); resetChat(); document.querySelectorAll('.modal-backdrop').forEach(m=>m.classList.add('hidden')); cleanupPeer(); activeRoom = null; $('#app').classList.add('hidden'); $('#authScreen').classList.remove('hidden'); await loadInvitePreview(); await initGoogleButton();
   }
   function handleSession(session) {
     const user = session && session.user;
@@ -696,7 +880,8 @@ export const appScript = String.raw`
   ['newRoom', 'newRoomWide', 'emptyCreate'].forEach(function (id) { $('#' + id).addEventListener('click', function () { openModal('createModal'); setTimeout(function () { $('#roomNameInput').focus(); }, 50); }); });
   document.querySelectorAll('[data-close]').forEach(function (button) { button.addEventListener('click', function () { closeModal(button.dataset.close); }); });
   document.querySelectorAll('.modal-backdrop').forEach(function (backdrop) { backdrop.addEventListener('click', function (event) { if (event.target === backdrop && backdrop.id !== 'acceptInviteModal') closeModal(backdrop.id); }); });
-  $('#inviteButton').addEventListener('click', createInvite);
+  $('#inviteButton').addEventListener('click', openInviteManager);
+  $('#generateInvite').addEventListener('click', createInvite);
   $('#copyInvite').addEventListener('click', async function () { await navigator.clipboard.writeText($('#inviteLink').value); $('#copyInvite').textContent = 'Copiado'; setTimeout(function () { $('#copyInvite').textContent = 'Copiar'; }, 1400); });
   $('#acceptInvite').addEventListener('click', acceptInvite);
   $('#declineInvite').addEventListener('click', function () { pendingInvite = ''; history.replaceState(null, '', location.pathname); closeModal('acceptInviteModal'); });
@@ -713,8 +898,17 @@ export const appScript = String.raw`
   }
   $('#toggleChat').addEventListener('click', function () { toggleChat(); }); $('#closeChat').addEventListener('click', function () { toggleChat(false); });
   $('#clearChannel').addEventListener('click', clearActiveChannel);
+  $('#cancelReply').addEventListener('click', clearReply); $('#closePinned').addEventListener('click', function () { $('#pinnedPanel').classList.add('hidden'); });
+  $('#gestureButton').addEventListener('click', function () { const open = $('#gestureMenu').classList.contains('hidden'); $('#gestureMenu').classList.toggle('hidden', !open); $('#gestureButton').setAttribute('aria-expanded', String(open)); });
+  document.querySelectorAll('[data-gesture]').forEach(function (button) { button.addEventListener('click', function () { sendGesture(button.dataset.gesture); }); });
+  $('#customGesture').addEventListener('click', function () { const emoji = prompt('Digite o emoji que você quer mandar:', '✨'); if (emoji) sendGesture(emoji); });
   $('#micButton').addEventListener('click', toggleMicrophone); $('#cameraButton').addEventListener('click', toggleCamera); $('#screenButton').addEventListener('click', toggleScreen); $('#leaveButton').addEventListener('click', leaveActiveRoom);
-  window.addEventListener('beforeunload', function () { stopPreviews(); leaving = true; stopMedia(); peer?.destroy(); });
+  $('#cancelPrejoin').addEventListener('click', function () { closeModal('prejoinModal'); }); $('#confirmPrejoin').addEventListener('click', confirmPrejoin);
+  $('#prejoinMic').addEventListener('click', function () { togglePrejoinMedia('mic'); }); $('#prejoinCamera').addEventListener('click', function () { togglePrejoinMedia('camera'); });
+  $('#prejoinName').addEventListener('input', function () { setAvatar($('#prejoinAvatar'), $('#prejoinName').value || userName(), avatarUrl()); });
+  $('#prejoinMicSelect').addEventListener('change', async function () { if (prejoinStream?.getAudioTracks().length) { await togglePrejoinMedia('mic'); await togglePrejoinMedia('mic'); } });
+  $('#prejoinCameraSelect').addEventListener('change', async function () { if (prejoinStream?.getVideoTracks().length) { await togglePrejoinMedia('camera'); await togglePrejoinMedia('camera'); } });
+  window.addEventListener('beforeunload', function () { stopPreviews(); stopPrejoin(); leaving = true; stopMedia(); peer?.destroy(); });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(function () {});
 
 

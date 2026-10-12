@@ -1,4 +1,4 @@
-const APP_VERSION = '1.14';
+const APP_VERSION = '1.15';
 
 export const page = `<!doctype html>
 <html lang="pt-BR">
@@ -74,11 +74,13 @@ export const page = `<!doctype html>
           <div class="media-stage hidden" id="mediaStage">
             <div class="connection-note" id="connectionNote"><i></i><span>Conectando à sala…</span></div>
             <div class="media-grid" id="mediaGrid"></div>
+            <div class="gesture-layer" id="gestureLayer" aria-live="polite"></div>
           </div>
           <div class="media-controls hidden" id="mediaControls">
             <div class="control-group"><button class="control-button" id="micButton" aria-label="Ligar microfone" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0014 0v-2M12 19v3m-4 0h8"/></svg><small>Ligar microfone</small></button><button class="device-arrow" id="micDevices" title="Escolher microfone" aria-label="Escolher microfone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 6-6 6 6"/></svg></button></div>
             <div class="control-group"><button class="control-button" id="cameraButton" aria-label="Ligar câmera" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="12" height="14" rx="3"/><path d="m15 10 6-4v12l-6-4"/></svg><small>Ligar câmera</small></button><button class="device-arrow" id="cameraDevices" title="Escolher câmera" aria-label="Escolher câmera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 6-6 6 6"/></svg></button></div>
             <button class="control-button share" id="screenButton" aria-label="Compartilhar tela" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="3"/><path d="M8 21h8m-4-4v4m-4-11 4-4 4 4m-4-4v8"/></svg><small>Compartilhar tela</small></button>
+            <div class="gesture-control"><button class="control-button" id="gestureButton" aria-label="Enviar reação" aria-expanded="false"><span class="gesture-icon">🙋</span><small>Reagir</small></button><div class="gesture-menu hidden" id="gestureMenu"><button type="button" data-gesture="🙋" title="Levantar a mão">🙋</button><button type="button" data-gesture="👏" title="Aplaudir">👏</button><button type="button" data-gesture="😂" title="Rir">😂</button><button type="button" data-gesture="❤️" title="Coração">❤️</button><button type="button" data-gesture="🎉" title="Comemorar">🎉</button><button type="button" id="customGesture" title="Outro emoji">＋</button></div></div>
             <span class="control-divider"></span>
             <button class="control-button danger" id="leaveButton" title="Sair da chamada" aria-label="Sair da chamada"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 16v-4c4-5 14-5 18 0v4l-5-1v-3a12 12 0 00-8 0v3z"/></svg><small>Sair</small></button>
           </div>
@@ -87,7 +89,9 @@ export const page = `<!doctype html>
         <aside class="chat-panel" id="chatPanel">
           <div class="chat-head"><div><strong id="activeChannelName">Conversa</strong><small id="chatRoomName">Selecione uma sala</small></div><div class="chat-head-actions"><button class="hidden" id="clearChannel" title="Limpar este chat" aria-label="Limpar este chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 14h8l1-14M10 11v6m4-6v6"/></svg></button><button id="closeChat" aria-label="Fechar conversa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div></div>
           <div class="channel-tabs" id="channelTabs"></div>
+          <div class="pinned-panel hidden" id="pinnedPanel"><div><strong>📌 Fixadas</strong><button type="button" id="closePinned" aria-label="Ocultar mensagens fixadas">×</button></div><div id="pinnedMessages"></div></div>
           <div class="messages" id="messages"><div class="chat-empty"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-1 2V11.5a8.5 8.5 0 0 1 18 0Z"/><path d="M7 9h10M7 13h6"/></svg></span><strong>O chat começa aqui</strong><small>As mensagens desta sala aparecem para todos os membros.</small></div></div>
+          <div class="reply-preview hidden" id="replyPreview"><div><small>Respondendo a <strong id="replyName">alguém</strong></small><span id="replyText"></span></div><button type="button" id="cancelReply" aria-label="Cancelar resposta">×</button></div>
           <form class="message-form" id="messageForm">
             <input aria-label="Mensagem" id="messageInput" maxlength="2000" autocomplete="off" placeholder="Escolha uma sala para conversar" disabled>
             <button type="submit" disabled id="sendMessage" aria-label="Enviar mensagem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 3 19 9-19 9 4-9-4-9zm4 9h15"/></svg></button>
@@ -110,13 +114,14 @@ export const page = `<!doctype html>
   </div>
 
   <div class="modal-backdrop hidden" id="inviteModal">
-    <div class="modal">
+    <div class="modal invite-manager-modal">
       <button class="modal-close" type="button" data-close="inviteModal">×</button>
-      <div class="modal-icon">＋</div><h2>Convidar pessoas</h2>
-      <p>Quem receber o link entra com o Google e confirma a entrada. Não precisa de senha.</p>
-      <label for="inviteLink">Link de convite</label>
-      <div class="copy-field"><input id="inviteLink" readonly><button id="copyInvite" type="button">Copiar</button></div>
-      <p class="form-help">O link dá acesso à sala. Compartilhe apenas com quem você conhece.</p>
+      <div class="modal-icon">＋</div><h2>Convites da sala</h2>
+      <p>Crie um link com validade definida. Quem entrar precisa confirmar com a própria conta.</p>
+      <div class="invite-create-row"><label for="inviteExpiry">Validade</label><select id="inviteExpiry"><option value="24">24 horas</option><option value="168" selected>7 dias</option><option value="720">30 dias</option><option value="">Sem expiração</option></select><button class="primary-button" id="generateInvite" type="button">Gerar convite</button></div>
+      <div class="invite-link-result hidden" id="inviteLinkResult"><label for="inviteLink">Novo link</label><div class="copy-field"><input id="inviteLink" readonly><button id="copyInvite" type="button">Copiar</button></div><p class="form-help">O link completo só aparece agora. Guarde ou envie antes de fechar.</p></div>
+      <section class="invite-history hidden" id="inviteHistory"><div class="section-title"><strong>Links criados</strong><small>Administradores podem revogar qualquer convite.</small></div><div id="inviteList"></div></section>
+      <p class="form-error" id="inviteManageError" role="alert"></p>
     </div>
   </div>
 
@@ -178,6 +183,17 @@ export const page = `<!doctype html>
       <div class="settings-heading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0112 0v3M17 9a3 3 0 010 6m2 1a5 5 0 012 4v1"/></svg><div><h2>Membros da sala</h2><p id="memberSummary">Todas as pessoas que têm acesso aparecem aqui.</p></div></div>
       <div class="member-list" id="memberList"></div>
       <p class="form-error" id="manageRoomError" role="alert"></p>
+    </div>
+  </div>
+  <div class="modal-backdrop hidden" id="prejoinModal">
+    <div class="modal prejoin-modal">
+      <button class="modal-close" type="button" id="cancelPrejoin" aria-label="Cancelar entrada">×</button>
+      <span class="modal-kicker">ANTES DE ENTRAR</span><h2 id="prejoinRoomName">Sala</h2><p id="prejoinOnline">Veja como você vai aparecer para a galera.</p>
+      <div class="prejoin-preview"><video id="prejoinVideo" autoplay muted playsinline></video><span class="prejoin-avatar" id="prejoinAvatar">A</span><span class="prejoin-status" id="prejoinStatus">Câmera desligada</span></div>
+      <label for="prejoinName">Seu nome nesta sala</label><input id="prejoinName" maxlength="60" autocomplete="nickname" required>
+      <div class="prejoin-toggles"><button class="secondary-button" id="prejoinMic" type="button" aria-pressed="false">🎙️ Microfone desligado</button><button class="secondary-button" id="prejoinCamera" type="button" aria-pressed="false">📷 Câmera desligada</button></div>
+      <div class="prejoin-devices"><select id="prejoinMicSelect" aria-label="Escolher microfone"><option value="">Microfone padrão</option></select><select id="prejoinCameraSelect" aria-label="Escolher câmera"><option value="">Câmera padrão</option></select></div>
+      <p class="form-error" id="prejoinError" role="alert"></p><button class="primary-button full" id="confirmPrejoin" type="button">Entrar na sala</button>
     </div>
   </div>
   <div class="modal-backdrop hidden" id="devicesModal">
