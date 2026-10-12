@@ -23,7 +23,7 @@ body,
 }
 
 [data-compat-surface="auth"] {
-  height: 100%;
+  display: contents;
 }
 
 /* Etapa 2 — shell comercial em componentes React */

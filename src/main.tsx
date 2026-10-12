@@ -42,6 +42,14 @@ async function start() {
     );
   });
 
+  const isLocalShellPreview = ["127.0.0.1", "localhost"].includes(location.hostname)
+    && new URLSearchParams(location.search).has("shell-preview");
+  if (isLocalShellPreview) {
+    document.getElementById("authScreen")?.classList.add("hidden");
+    document.getElementById("app")?.classList.remove("hidden");
+    return;
+  }
+
   await loadGoogleIdentity();
   const legacyRuntime = document.createElement("script");
   legacyRuntime.src = "/legacy-app.js";
