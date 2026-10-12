@@ -13,7 +13,6 @@ export default defineConfig({
         entryFileNames: "assets/app.js",
         chunkFileNames: "assets/[name].js",
         assetFileNames: (assetInfo) => assetInfo.name?.endsWith(".css") ? "assets/app.css" : "assets/[name][extname]",
-        inlineDynamicImports: true
       }
     }
   }

@@ -43,9 +43,20 @@ Criar uma base moderna e escalável sem interromper as funcionalidades já valid
 
 ## Próximas etapas
 
-### 5. Remoção da compatibilidade
+## Etapa 5 concluída
 
-Converter o runtime atual em hooks e serviços TypeScript, adicionar testes de integração e remover `LegacySurface` quando não houver mais dependências dela.
+- O aplicativo não carrega mais `/legacy-app.js`; o runtime agora é um módulo do bundle React.
+- A inicialização passou para o hook `useApplicationRuntime`, protegido contra execução duplicada no modo estrito do React.
+- Supabase, Google Identity, PeerJS e dispositivos de mídia foram isolados em serviços TypeScript.
+- O runtime pesado e suas dependências são carregados sob demanda em chunks separados, reduzindo o bundle inicial de aproximadamente 530 kB para 268 kB.
+- Um teste de integração confirma injeção dos serviços, divisão de código e ausência da antiga rota de compatibilidade.
+- O empacotador e o teste do artefato verificam e servem todos os chunks gerados.
+
+## Próximos investimentos técnicos
+
+- Migrar gradualmente os estados internos de sala e chamada para stores e hooks menores.
+- Adicionar testes de navegador com duas sessões reais para WebRTC, moderação e convites.
+- Monitorar erros de mídia e conexão em produção.
 
 ## Regra de segurança da migração
 

@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { styles } from "../worker/styles.js";
@@ -8,13 +8,14 @@ const viteRoot = resolve(root, ".vite-dist");
 const distRoot = resolve(root, "dist");
 const serverRoot = resolve(distRoot, "server");
 
-const [viteHtml, appJs, appCss, legacyJs, hosting] = await Promise.all([
+const [viteHtml, viteAppJs, appCss, hosting, viteAssetNames] = await Promise.all([
   readFile(resolve(viteRoot, "index.html"), "utf8"),
   readFile(resolve(viteRoot, "assets/app.js"), "utf8"),
   readFile(resolve(viteRoot, "assets/app.css"), "utf8"),
-  readFile(resolve(root, "src/generated/legacy-app.js"), "utf8"),
   readFile(resolve(root, ".openai/hosting.json"), "utf8"),
+  readdir(resolve(viteRoot, "assets")),
 ]);
+const appJs = viteAppJs.replace(/import\(["']\.\/([^"']+\.js)["']\)/g, 'import("/assets/$1")');
 const html = viteHtml
   .replaceAll("/assets/app.js", "/app.js")
   .replaceAll("/assets/app.css", "/app.css");
@@ -27,10 +28,15 @@ const privacy = legalPage("Privacidade", `<h1>Política de Privacidade</h1><p>O 
 const terms = legalPage("Termos", `<h1>Termos de Uso</h1><div class="legal-box"><p>Ao usar o Mostra aí, você concorda em utilizar o serviço de forma legal, respeitosa e somente com pessoas autorizadas.</p></div><h2>Uso permitido</h2><p>Você é responsável pelo conteúdo que compartilha e deve ter autorização para transmitir telas, áudio, vídeo e mensagens.</p><h2>Disponibilidade</h2><p>O serviço pode mudar, ficar temporariamente indisponível ou depender de serviços externos e da conexão dos participantes.</p><h2>Privacidade</h2><p>O tratamento de dados está descrito na <a href="/privacy">Política de Privacidade</a>.</p>`);
 const icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" rx="26" fill="#7664e8"/><path d="M32 91V38l32 29 32-29v53" fill="none" stroke="#fff" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const manifest = JSON.stringify({ name: "Mostra aí", short_name: "Mostra aí", description: "Salas privadas com tela, câmera, áudio e chat.", start_url: "/", display: "standalone", background_color: "#17181d", theme_color: "#17181d", icons: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" }] });
-const serviceWorker = `const CACHE='mostra-ai-react-v1';self.addEventListener('install',()=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.map(k=>caches.delete(k)))).then(()=>self.clients.claim())));`;
+const serviceWorker = `const CACHE='mostra-ai-react-v2';self.addEventListener('install',()=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.map(k=>caches.delete(k)))).then(()=>self.clients.claim())));`;
 
-const assets = { "/": [html, "text/html; charset=utf-8"], "/index.html": [html, "text/html; charset=utf-8"], "/app.js": [appJs, "text/javascript; charset=utf-8"], "/app.css": [appCss, "text/css; charset=utf-8"], "/legacy-app.js": [legacyJs, "text/javascript; charset=utf-8"], "/privacy": [privacy, "text/html; charset=utf-8"], "/terms": [terms, "text/html; charset=utf-8"], "/icon.svg": [icon, "image/svg+xml"], "/manifest.webmanifest": [manifest, "application/manifest+json"], "/sw.js": [serviceWorker, "text/javascript; charset=utf-8"] };
-const worker = `const assets = ${JSON.stringify(assets)};\nexport default { async fetch(request) { const pathname = new URL(request.url).pathname; const asset = assets[pathname]; if (!asset) return new Response("Not found", { status: 404 }); return new Response(asset[0], { headers: { "content-type": asset[1], "cache-control": ["/", "/index.html", "/app.js", "/app.css", "/legacy-app.js"].includes(pathname) ? "no-cache" : "public, max-age=3600", "referrer-policy": "strict-origin-when-cross-origin", "x-content-type-options": "nosniff", "permissions-policy": "camera=(self), microphone=(self), display-capture=(self)" } }); } };\n`;
+const assets = { "/": [html, "text/html; charset=utf-8"], "/index.html": [html, "text/html; charset=utf-8"], "/app.js": [appJs, "text/javascript; charset=utf-8"], "/app.css": [appCss, "text/css; charset=utf-8"], "/privacy": [privacy, "text/html; charset=utf-8"], "/terms": [terms, "text/html; charset=utf-8"], "/icon.svg": [icon, "image/svg+xml"], "/manifest.webmanifest": [manifest, "application/manifest+json"], "/sw.js": [serviceWorker, "text/javascript; charset=utf-8"] };
+for (const name of viteAssetNames) {
+  if (["app.js", "app.css"].includes(name)) continue;
+  const content = await readFile(resolve(viteRoot, "assets", name), "utf8");
+  assets[`/assets/${name}`] = [content, name.endsWith(".css") ? "text/css; charset=utf-8" : "text/javascript; charset=utf-8"];
+}
+const worker = `const assets = ${JSON.stringify(assets)};\nexport default { async fetch(request) { const pathname = new URL(request.url).pathname; const asset = assets[pathname]; if (!asset) return new Response("Not found", { status: 404 }); return new Response(asset[0], { headers: { "content-type": asset[1], "cache-control": pathname === "/" || pathname === "/index.html" || pathname.endsWith(".js") || pathname.endsWith(".css") ? "no-cache" : "public, max-age=3600", "referrer-policy": "strict-origin-when-cross-origin", "x-content-type-options": "nosniff", "permissions-policy": "camera=(self), microphone=(self), display-capture=(self)" } }); } };\n`;
 
 await rm(distRoot, { recursive: true, force: true });
 await mkdir(serverRoot, { recursive: true });

@@ -27,10 +27,15 @@ const home = await (await fetchAsset("/")).text();
 assert.match(home, /src="\/app\.js"/);
 assert.match(home, /href="\/app\.css"/);
 assert.doesNotMatch(home, /\/assets\/app\.(?:js|css)/);
-for (const pathname of ["/app.js", "/app.css", "/legacy-app.js", "/privacy", "/terms"]) {
+for (const pathname of ["/app.js", "/app.css", "/privacy", "/terms"]) {
   const response = await fetchAsset(pathname);
   assert.equal(response.status, 200, `${pathname} should be served`);
   assert.ok((await response.text()).length > 20, `${pathname} should not be empty`);
 }
+assert.equal((await fetchAsset("/legacy-app.js")).status, 404, "legacy-app.js must be removed");
+const appSource = await (await fetchAsset("/app.js")).text();
+const runtimePath = appSource.match(/["'](\/assets\/application-runtime(?:-[^"']+)?\.js)["']/)?.[1];
+assert.ok(runtimePath, "React entrypoint should lazy-load the application runtime");
+assert.equal((await fetchAsset(runtimePath)).status, 200, "runtime chunk should be served");
 
-console.log("Artifact is valid ESM, serves the React entrypoint and exports default.fetch");
+console.log("Artifact is valid ESM, code-split and free of the legacy runtime route");
