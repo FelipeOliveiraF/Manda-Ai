@@ -2,9 +2,11 @@ import { StrictMode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { startDiagnostics } from "./services/diagnostics";
 import "./styles/app.css";
 
 window.__MOSTRA_AI_REACT__ = true;
+startDiagnostics();
 
 async function start() {
   const root = document.getElementById("root");

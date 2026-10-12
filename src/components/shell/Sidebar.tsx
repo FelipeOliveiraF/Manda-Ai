@@ -27,7 +27,7 @@ export function Sidebar() {
       <div className="account-card">
         <button className="account-avatar" id="accountAvatar" title="Editar perfil" aria-label="Editar perfil">A</button>
         <div className="account-copy"><strong id="accountName">Amigo</strong><small>Disponível</small></div>
-        <button id="profileButton" title="Editar perfil" aria-label="Editar perfil"><Settings /></button>
+        <button id="profileButton" title="Configurações" aria-label="Abrir configurações"><Settings /></button>
         <button id="logoutButton" title="Sair da conta" aria-label="Sair da conta"><LogOut /></button>
       </div>
     </aside>

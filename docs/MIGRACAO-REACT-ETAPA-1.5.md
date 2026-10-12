@@ -54,9 +54,26 @@ Criar uma base moderna e escalável sem interromper as funcionalidades já valid
 
 ## Próximos investimentos técnicos
 
-- Migrar gradualmente os estados internos de sala e chamada para stores e hooks menores.
-- Adicionar testes de navegador com duas sessões reais para WebRTC, moderação e convites.
-- Monitorar erros de mídia e conexão em produção.
+## Etapa 6 concluída — confiabilidade
+
+- Reconexão automática com espera progressiva quando PeerJS ou a internet oscilam.
+- Estados visuais para conexão boa, instável, reconectando e offline.
+- Preferências persistentes para ativar sons e controlar o volume.
+- Diagnósticos locais de erros, promessas rejeitadas e quedas de rede.
+- Teste automatizado de prontidão cobre conexão, sons e serviços críticos.
+
+## Etapa 7 concluída — produto comercial
+
+- Nova entrada pública comercial com proposta de valor e recursos principais.
+- Central de configurações para perfil, dispositivos, sons, conexão e instalação.
+- PWA instalável com cache do shell e chunks para recuperação offline da interface.
+- CTA de instalação no onboarding quando o navegador oferece suporte.
+
+## Próximos investimentos técnicos
+
+- Testes de navegador contínuos com duas sessões reais para WebRTC, moderação e convites.
+- Telemetria externa opcional e consentida para erros de produção.
+- Domínio próprio e configuração definitiva da tela de consentimento do Google.
 
 ## Regra de segurança da migração
 

@@ -53,6 +53,8 @@ export const appScript = String.raw`
   const speakingMonitors = new Map();
   let speakingContext = null;
   let rosterReady = false;
+  let reconnectTimer = null;
+  let reconnectAttempts = 0;
 
   function playCallSound(event) { services.sounds.play(event); }
 
@@ -108,6 +110,23 @@ export const appScript = String.raw`
   function setConnection(message, healthy) {
     $('#connectionNote span').textContent = message;
     $('#connectionNote i').style.background = healthy ? 'var(--color-speaking)' : 'var(--color-warning)';
+    $('#connectionNote').dataset.state = healthy ? 'healthy' : navigator.onLine ? 'recovering' : 'offline';
+    const network = navigator.connection;
+    const unstable = !navigator.onLine || network && (['slow-2g','2g'].includes(network.effectiveType) || network.rtt > 550 || network.downlink < 1);
+    $('#connectionQuality').textContent = !navigator.onLine ? 'Offline' : unstable ? 'Instável' : healthy ? 'Boa' : 'Reconectando';
+    $('#networkStatus').textContent = !navigator.onLine ? 'Offline' : unstable ? 'Instável' : 'Online';
+    $('#connectionStatusSummary').textContent = message;
+  }
+  function clearReconnect() { clearTimeout(reconnectTimer); reconnectTimer = null; reconnectAttempts = 0; }
+  function scheduleReconnect(targetPeer) {
+    if (leaving || !activeRoom || reconnectTimer) return;
+    reconnectAttempts += 1; const delay = Math.min(10000, 800 * Math.pow(1.8, reconnectAttempts - 1));
+    setConnection(navigator.onLine ? 'Reconectando… tentativa ' + reconnectAttempts : 'Sem internet. Aguardando conexão…', false);
+    reconnectTimer = setTimeout(function () {
+      reconnectTimer = null; if (leaving || !activeRoom) return;
+      try { if (navigator.onLine && targetPeer && targetPeer.disconnected && !targetPeer.destroyed) targetPeer.reconnect(); } catch (_) {}
+      if (targetPeer?.disconnected) scheduleReconnect(targetPeer);
+    }, navigator.onLine ? delay : 1800);
   }
 
   async function randomNonce() {
@@ -672,7 +691,9 @@ export const appScript = String.raw`
   }
   function attachPeerHandlers(targetPeer) {
     targetPeer.on('call', handleIncomingCall);
-    targetPeer.on('disconnected', function () { if (!leaving) setConnection('Reconectando…', false); });
+    targetPeer.on('open', function () { clearReconnect(); });
+    targetPeer.on('disconnected', function () { if (!leaving) scheduleReconnect(targetPeer); });
+    targetPeer.on('error', function () { if (!leaving && activeRoom) scheduleReconnect(targetPeer); });
   }
   function becomeCoordinator(targetPeer) {
     isCoordinator = true; peer = targetPeer; roster.set(peer.id, roomUserName()); peerUserIds.set(peer.id,currentUser.id); setConnection('Sala conectada', true); broadcastRoster();
@@ -714,7 +735,7 @@ export const appScript = String.raw`
     screenTrack = null; cameraTrack = null; microphoneTrack = null; screenAudioTracks = [];
   }
   function cleanupPeer() {
-    leaving = true; stopMedia();
+    leaving = true; clearReconnect(); stopMedia();
     Array.from(speakingMonitors.keys()).forEach(stopSpeakingMonitor); if (speakingContext) speakingContext.close().catch(function () {}); speakingContext = null;
     outgoingCalls.forEach(function (call) { call.close(); }); incomingCalls.forEach(function (call) { call.close(); }); dataConnections.forEach(function (connection) { connection.close(); });
     coordinatorConnection?.close(); peer?.destroy(); peer = null; coordinatorConnection = null; isCoordinator = false;
@@ -870,6 +891,24 @@ export const appScript = String.raw`
     $('#emptyStage').classList.remove('hidden'); $('#mediaStage').classList.add('hidden'); $('#mediaControls').classList.add('hidden');
     $('#roomTitle').textContent = 'Escolha uma sala'; $('#roomSubtitle').textContent = 'Suas salas ficam salvas aqui'; $('#chatRoomName').textContent = 'Selecione uma sala'; $('#activeChannelName').textContent = 'Conversa'; $('#participantCount').textContent = '0 online';
     $('#inviteButton').disabled = true; $('#messageInput').disabled = true; $('#sendMessage').disabled = true; $('#messageInput').placeholder = 'Escolha uma sala para conversar';
+  }
+
+  function syncPreferences() {
+    $('#soundEnabled').checked = services.sounds.isEnabled;
+    $('#soundVolume').value = String(Math.round(services.sounds.level * 100));
+    $('#soundVolume').disabled = !services.sounds.isEnabled;
+    const installed = services.pwa.installed, available = services.pwa.canInstall;
+    $('#installAppButton').disabled = installed || !available;
+    $('#installAppStatus').textContent = installed ? 'Já instalado neste dispositivo' : available ? 'Usar como aplicativo no computador' : 'Disponível pelo menu do navegador';
+    $('#landingInstallButton').classList.toggle('hidden', !available || installed);
+    setConnection(activeRoom ? $('#connectionNote span').textContent : 'Pronta para conversar', Boolean(activeRoom && $('#connectionNote').dataset.state === 'healthy'));
+  }
+  async function installApplication() {
+    const result = await services.pwa.install();
+    if (result === 'accepted') showToast('Mostra aí instalado com sucesso.');
+    else if (result === 'dismissed') showToast('Instalação cancelada. Você pode tentar novamente depois.');
+    else showToast('Use a opção “Instalar aplicativo” no menu do navegador.');
+    syncPreferences();
   }
 
   async function bootSignedIn(user) {
@@ -1217,7 +1256,13 @@ export const appScript = String.raw`
     }catch(err){if(isMic)micDevice=old;else cameraDevice=old;select.value=old;$('#deviceHint').textContent=mediaError(err);}finally{select.disabled=false;}
   }
   function openDevices(focus) {openModal('devicesModal');enumerateDevices();if(focus)$('#'+focus).focus();}
-  $('#profileButton').addEventListener('click',editProfile);$('#accountAvatar').addEventListener('click',editProfile);
+  $('#profileButton').addEventListener('click',function(){syncPreferences();openModal('preferencesModal');});$('#accountAvatar').addEventListener('click',editProfile);
+  $('#editProfileFromSettings').addEventListener('click',function(){closeModal('preferencesModal');editProfile();});
+  $('#openDevicesFromSettings').addEventListener('click',function(){closeModal('preferencesModal');openDevices();});
+  $('#soundEnabled').addEventListener('change',function(){services.sounds.setEnabled($('#soundEnabled').checked);syncPreferences();if($('#soundEnabled').checked)playCallSound('mediaOn');});
+  $('#soundVolume').addEventListener('input',function(){services.sounds.setVolume(Number($('#soundVolume').value)/100);});
+  $('#installAppButton').addEventListener('click',installApplication);$('#landingInstallButton').addEventListener('click',installApplication);
+  services.pwa.subscribe(syncPreferences);
   $('#roomSettingsButton').addEventListener('click',editRoom);
   $('#roomIdentityButton').addEventListener('click',()=>{if(!activeMembership)return;$('#roomNicknameInput').value=roomUserName();$('#roomIdentityError').textContent='';openModal('roomIdentityModal');});
   $('#manageRoomButton').addEventListener('click',()=>{renderMemberManagement();$('#manageRoomError').textContent='';openModal('manageRoomModal');});
@@ -1230,6 +1275,9 @@ export const appScript = String.raw`
   $('#testMic').addEventListener('click',testMicrophone);$('#testCamera').addEventListener('click',testCamera);
   $('#microphoneSelect').addEventListener('change',()=>changeDevice('mic'));$('#cameraSelect').addEventListener('change',()=>changeDevice('camera'));
   navigator.mediaDevices?.addEventListener('devicechange',()=>{if(!$('#devicesModal').classList.contains('hidden'))enumerateDevices();});
+  window.addEventListener('offline',function(){if(activeRoom)setConnection('Sem internet. A chamada será retomada automaticamente.',false);else syncPreferences();});
+  window.addEventListener('online',function(){if(activeRoom){setConnection('Internet voltou. Reconectando…',false);scheduleReconnect(peer);}else syncPreferences();});
+  navigator.connection?.addEventListener?.('change',function(){if(activeRoom)setConnection($('#connectionNote span').textContent,$('#connectionNote').dataset.state==='healthy');else syncPreferences();});
   document.addEventListener('keydown',event=>{
     const modal=Array.from(document.querySelectorAll('.modal-backdrop')).find(m=>!m.classList.contains('hidden'));if(!modal)return;
     if(event.key==='Escape'&&modal.id!=='acceptInviteModal'){closeModal(modal.id);return;}

@@ -24,8 +24,16 @@ const patterns: Record<CallSoundEvent, Tone[]> = {
 class CallSounds {
   private context?: AudioContext;
   private lastPlayed = new Map<CallSoundEvent, number>();
+  private enabled = localStorage.getItem("mostra-call-sounds") !== "false";
+  private volume = Math.max(0, Math.min(1, Number(localStorage.getItem("mostra-call-volume") ?? .7)));
+
+  get isEnabled() { return this.enabled; }
+  get level() { return this.volume; }
+  setEnabled(enabled: boolean) { this.enabled = enabled; localStorage.setItem("mostra-call-sounds", String(enabled)); }
+  setVolume(volume: number) { this.volume = Math.max(0, Math.min(1, volume)); localStorage.setItem("mostra-call-volume", String(this.volume)); }
 
   play(event: CallSoundEvent) {
+    if (!this.enabled || this.volume <= 0) return;
     const now = performance.now();
     if (now - (this.lastPlayed.get(event) ?? 0) < 260) return;
     this.lastPlayed.set(event, now);
@@ -39,7 +47,7 @@ class CallSounds {
         oscillator.type = "sine";
         oscillator.frequency.setValueAtTime(frequency, start + offset);
         gain.gain.setValueAtTime(.0001, start + offset);
-        gain.gain.exponentialRampToValueAtTime(volume, start + offset + .012);
+        gain.gain.exponentialRampToValueAtTime(volume * this.volume, start + offset + .012);
         gain.gain.exponentialRampToValueAtTime(.0001, start + offset + duration);
         oscillator.connect(gain).connect(this.context.destination);
         oscillator.start(start + offset);

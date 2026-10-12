@@ -34,7 +34,7 @@ export function Stage() {
         <button className="primary-button" id="emptyCreate">Criar uma sala</button>
       </div>
       <div className="media-stage hidden" id="mediaStage">
-        <div className="connection-note" id="connectionNote"><i /><span>Conectando à sala…</span></div>
+        <div className="connection-note" id="connectionNote"><i /><span>Conectando à sala…</span><strong id="connectionQuality">Verificando</strong></div>
         <div className="call-stage-status" aria-hidden="true"><Radio /><span>AO VIVO</span></div>
         <div className="media-grid" id="mediaGrid" />
         <div className="gesture-layer" id="gestureLayer" aria-live="polite" />

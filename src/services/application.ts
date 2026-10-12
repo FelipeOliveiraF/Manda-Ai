@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { GOOGLE_CLIENT_ID } from "./config";
 import { supabaseClient } from "./supabase";
 import { callSounds } from "./callSounds";
+import { pwaService } from "./pwa";
 
 export interface ApplicationServices {
   supabase: SupabaseClient;
@@ -10,6 +11,7 @@ export interface ApplicationServices {
   mediaDevices: MediaDevices;
   googleClientId: string;
   sounds: typeof callSounds;
+  pwa: typeof pwaService;
 }
 
 export function createApplicationServices(): ApplicationServices {
@@ -20,5 +22,6 @@ export function createApplicationServices(): ApplicationServices {
     mediaDevices: navigator.mediaDevices,
     googleClientId: GOOGLE_CLIENT_ID,
     sounds: callSounds,
+    pwa: pwaService,
   };
 }
