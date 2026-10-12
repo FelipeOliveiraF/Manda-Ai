@@ -18,6 +18,10 @@ assert.match(runtime, /export function startApplicationRuntime/, "generated runt
 assert.match(runtime, /services\.supabase/, "runtime must receive Supabase as a service");
 assert.match(runtime, /services\.mediaDevices/, "runtime must receive media devices as a service");
 assert.match(runtime, /services\.Peer/, "runtime must receive PeerJS as a service");
+assert.match(runtime, /services\.sounds\.play/, "runtime must receive call sounds as a service");
+for (const event of ["join", "leave", "participantJoin", "participantLeave", "shareStart", "shareStop", "mediaOn", "mediaOff"]) {
+  assert.match(runtime, new RegExp(`playCallSound\\(['\"]${event}['\"]\\)`), `missing call sound: ${event}`);
+}
 assert.match(runtime, /if \(googleInitialized\) return;\s*googleInitialized = true;/, "Google initialization must be race-safe");
 assert.doesNotMatch(packager, /["']\/legacy-app\.js["']/, "deployment must not expose the legacy route");
 

@@ -52,6 +52,9 @@ export const appScript = String.raw`
   const remoteKinds = new Map();
   const speakingMonitors = new Map();
   let speakingContext = null;
+  let rosterReady = false;
+
+  function playCallSound(event) { services.sounds.play(event); }
 
   function initials(name) {
     return String(name || 'Amigo').trim().split(/\s+/).slice(0, 2).map(function (part) { return part[0] || ''; }).join('').toUpperCase() || '?';
@@ -607,12 +610,18 @@ export const appScript = String.raw`
     $('#participantCount').textContent = roster.size + (roster.size === 1 ? ' online' : ' online');
   }
   function applyRoster(items) {
+    const previousIds = new Set(roster.keys());
+    if (rosterReady) {
+      if (items.some(function (item) { return item.id !== peer?.id && !previousIds.has(item.id); })) playCallSound('participantJoin');
+      if (Array.from(previousIds).some(function (id) { return id !== peer?.id && !items.some(function (item) { return item.id === id; }); })) playCallSound('participantLeave');
+    }
     memberProfiles.clear();
     const activeIds = new Set(items.map(function (item) { return item.id; }));
     roster.forEach(function (_, id) {
       if (!activeIds.has(id)) { remoteStreams.delete(id); remoteKinds.delete(id); stopSpeakingMonitor(id); findTile(id)?.remove(); }
     });
     roster.clear(); items.forEach(function (item) { roster.set(item.id, String(item.name || 'Amigo').slice(0, 60)); if (item.userId) peerUserIds.set(item.id,item.userId); }); renderRoster();
+    rosterReady = true;
     loadMemberProfiles();
     if (outgoingStream().getTracks().length) roster.forEach(function (_, id) { callPeer(id); });
   }
@@ -655,10 +664,11 @@ export const appScript = String.raw`
     const old = incomingCalls.get(call.peer); if (old) old.close();
     incomingCalls.set(call.peer, call); call.answer();
     call.on('stream', function (stream) {
-      remoteStreams.set(call.peer, stream); remoteKinds.set(call.peer, call.metadata && call.metadata.kind || (stream.getVideoTracks().length ? 'camera' : 'audio'));
+      const previousKind = remoteKinds.get(call.peer); const nextKind = call.metadata && call.metadata.kind || (stream.getVideoTracks().length ? 'camera' : 'audio');
+      remoteStreams.set(call.peer, stream); remoteKinds.set(call.peer, nextKind); if (nextKind === 'screen' && previousKind !== 'screen') playCallSound('shareStart');
       ensureTile(call.peer, roster.get(call.peer) || call.metadata && call.metadata.name || 'Amigo', stream, remoteKinds.get(call.peer), false);
     });
-    call.on('close', function () { if (incomingCalls.get(call.peer) === call) { incomingCalls.delete(call.peer); remoteStreams.delete(call.peer); remoteKinds.delete(call.peer); renderRoster(); } });
+    call.on('close', function () { if (incomingCalls.get(call.peer) === call) { if (remoteKinds.get(call.peer) === 'screen' && !leaving) playCallSound('shareStop'); incomingCalls.delete(call.peer); remoteStreams.delete(call.peer); remoteKinds.delete(call.peer); renderRoster(); } });
   }
   function attachPeerHandlers(targetPeer) {
     targetPeer.on('call', handleIncomingCall);
@@ -668,12 +678,12 @@ export const appScript = String.raw`
     isCoordinator = true; peer = targetPeer; roster.set(peer.id, roomUserName()); peerUserIds.set(peer.id,currentUser.id); setConnection('Sala conectada', true); broadcastRoster();
     peer.on('connection', function (connection) {
       dataConnections.set(connection.peer, connection); if(connection.metadata?.userId) peerUserIds.set(connection.peer,connection.metadata.userId);
-      connection.on('open', function () { roster.set(connection.peer, String(connection.metadata && connection.metadata.nickname || 'Amigo').slice(0, 60)); broadcastRoster(); });
+      connection.on('open', function () { roster.set(connection.peer, String(connection.metadata && connection.metadata.nickname || 'Amigo').slice(0, 60)); playCallSound('participantJoin'); broadcastRoster(); });
       connection.on('data', function (data) {
         if (data && data.type === 'intro') { roster.set(connection.peer, String(data.nickname || 'Amigo').slice(0, 60)); broadcastRoster(); }
         else if (data && data.type === 'gesture') relayGesture({ emoji: data.emoji, name: roster.get(connection.peer) || 'Amigo' });
       });
-      connection.on('close', function () { dataConnections.delete(connection.peer); roster.delete(connection.peer); remoteStreams.delete(connection.peer); remoteKinds.delete(connection.peer); broadcastRoster(); });
+      connection.on('close', function () { dataConnections.delete(connection.peer); roster.delete(connection.peer); remoteStreams.delete(connection.peer); remoteKinds.delete(connection.peer); if (!leaving) playCallSound('participantLeave'); broadcastRoster(); });
     });
   }
   function joinCoordinator() {
@@ -708,7 +718,7 @@ export const appScript = String.raw`
     Array.from(speakingMonitors.keys()).forEach(stopSpeakingMonitor); if (speakingContext) speakingContext.close().catch(function () {}); speakingContext = null;
     outgoingCalls.forEach(function (call) { call.close(); }); incomingCalls.forEach(function (call) { call.close(); }); dataConnections.forEach(function (connection) { connection.close(); });
     coordinatorConnection?.close(); peer?.destroy(); peer = null; coordinatorConnection = null; isCoordinator = false;
-    roster.clear(); peerUserIds.clear(); memberProfiles.clear(); dataConnections.clear(); outgoingCalls.clear(); incomingCalls.clear(); remoteStreams.clear(); remoteKinds.clear(); $('#mediaGrid').textContent = ''; leaving = false; updateMediaButtons();
+    roster.clear(); rosterReady = false; peerUserIds.clear(); memberProfiles.clear(); dataConnections.clear(); outgoingCalls.clear(); incomingCalls.clear(); remoteStreams.clear(); remoteKinds.clear(); $('#mediaGrid').textContent = ''; leaving = false; updateMediaButtons();
   }
   function updateMediaButtons() {
     [['screenButton',screenTrack,'Parar tela','Compartilhar tela'],['cameraButton',cameraTrack,'Desligar câmera','Ligar câmera'],['micButton',microphoneTrack,'Silenciar','Ligar microfone']].forEach(function(item){
@@ -745,19 +755,19 @@ export const appScript = String.raw`
     if (!activeRoom) return;
     if (activeMembership?.is_muted) { showToast('Seu microfone está bloqueado pela administração.'); return; }
     $('#micButton').disabled=true;
-    try { if (microphoneTrack) { microphoneTrack.stop(); microphoneTrack=null; refreshPublishing(); } else await replaceMicrophone(); }
+    try { if (microphoneTrack) { microphoneTrack.stop(); microphoneTrack=null; refreshPublishing(); playCallSound('mediaOff'); } else { await replaceMicrophone(); playCallSound('mediaOn'); } }
     catch(error){showToast(error.message === 'moderated' ? 'Seu microfone está bloqueado pela administração.' : mediaError(error));} finally{$('#micButton').disabled=false;applyMembershipControls();}
   }
   async function toggleCamera() {
     if (!activeRoom) return;
     $('#cameraButton').disabled=true;
-    try { if(cameraTrack){cameraTrack.stop();cameraTrack=null;refreshPublishing();}else await replaceCamera(); }
+    try { if(cameraTrack){cameraTrack.stop();cameraTrack=null;refreshPublishing();playCallSound('mediaOff');}else{await replaceCamera();playCallSound('mediaOn');} }
     catch(error){showToast(mediaError(error));}finally{$('#cameraButton').disabled=false;}
   }
   async function toggleScreen() {
     if (activeMembership && !activeMembership.can_share_screen) { showToast('O compartilhamento de tela está bloqueado pela administração.'); return; }
     try {
-      if (screenTrack) { const oldVideo = screenTrack; const oldAudio = screenAudioTracks.slice(); screenTrack = null; screenAudioTracks = []; oldVideo.stop(); oldAudio.forEach(function (track) { track.stop(); }); }
+      if (screenTrack) { const oldVideo = screenTrack; const oldAudio = screenAudioTracks.slice(); screenTrack = null; screenAudioTracks = []; oldVideo.stop(); oldAudio.forEach(function (track) { track.stop(); }); playCallSound('shareStop'); }
       else {
         const stream = await navigator.mediaDevices.getDisplayMedia({
           video: { frameRate: { ideal: 30, max: 60 }, displaySurface: 'browser' },
@@ -769,6 +779,7 @@ export const appScript = String.raw`
           windowAudio: 'exclude'
         });
         screenTrack = stream.getVideoTracks()[0];
+        playCallSound('shareStart');
         const displaySurface = screenTrack?.getSettings?.().displaySurface;
         const capturedAudio = stream.getAudioTracks();
         if (displaySurface === 'browser') {
@@ -779,7 +790,7 @@ export const appScript = String.raw`
           screenAudioTracks = [];
           showToast('Tela compartilhada sem áudio do computador. Para enviar som, escolha uma aba do navegador.');
         }
-        screenTrack.addEventListener('ended', function () { screenTrack = null; screenAudioTracks.forEach(function (track) { track.stop(); }); screenAudioTracks = []; if (!leaving) refreshPublishing(); });
+        screenTrack.addEventListener('ended', function () { screenTrack = null; screenAudioTracks.forEach(function (track) { track.stop(); }); screenAudioTracks = []; if (!leaving) { playCallSound('shareStop'); refreshPublishing(); } });
       }
       refreshPublishing();
     } catch (_) { showToast('O compartilhamento foi cancelado.'); }
@@ -829,7 +840,7 @@ export const appScript = String.raw`
     const button = $('#confirmPrejoin'); button.disabled = true; button.textContent = 'Entrando…';
     if (name !== pendingJoinMembership?.display_name) { const saved = await db.rpc('update_room_nickname', { p_room_id: room.id, p_display_name: name }); if (saved.error) { $('#prejoinError').textContent = 'Não consegui salvar seu nome nesta sala.'; button.disabled = false; button.textContent = 'Entrar na sala'; return; } }
     const joinStream = prejoinStream; prejoinStream = null; pendingJoinRoom = null; pendingJoinMembership = null; $('#prejoinModal').classList.add('hidden'); $('#prejoinVideo').srcObject = null;
-    button.disabled = false; button.textContent = 'Entrar na sala'; await enterRoom(room, joinStream);
+    button.disabled = false; button.textContent = 'Entrar na sala'; playCallSound('join'); await enterRoom(room, joinStream);
   }
   async function enterRoom(room, joinStream) {
     cleanupPeer();
@@ -852,6 +863,7 @@ export const appScript = String.raw`
     subscribeRoomControls(); await startPeerRoom(room);
   }
   function leaveActiveRoom() {
+    playCallSound('leave');
     cleanupPeer(); stopRoomControls();
     activeRoom = null; activeMembership = null; roomMembers.clear(); roomChannels = []; activeChannel = null; renderRooms(); resetChat(); renderChannels();
     $('#roomSettingsButton').classList.add('hidden'); $('#manageRoomButton').classList.add('hidden'); $('#roomIdentityButton').classList.add('hidden'); $('#clearChannel').classList.add('hidden'); $('#headerRoomAvatar').style.backgroundImage=''; $('#headerRoomAvatar').textContent='#';

@@ -2,12 +2,14 @@ import { Peer } from "peerjs";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { GOOGLE_CLIENT_ID } from "./config";
 import { supabaseClient } from "./supabase";
+import { callSounds } from "./callSounds";
 
 export interface ApplicationServices {
   supabase: SupabaseClient;
   Peer: typeof Peer;
   mediaDevices: MediaDevices;
   googleClientId: string;
+  sounds: typeof callSounds;
 }
 
 export function createApplicationServices(): ApplicationServices {
@@ -17,5 +19,6 @@ export function createApplicationServices(): ApplicationServices {
     Peer,
     mediaDevices: navigator.mediaDevices,
     googleClientId: GOOGLE_CLIENT_ID,
+    sounds: callSounds,
   };
 }
