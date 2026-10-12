@@ -43,9 +43,11 @@ async function start() {
   });
 
   const previewParams = new URLSearchParams(location.search);
+  const previewModal = previewParams.get("ui-preview");
   const isLocalPreview = ["127.0.0.1", "localhost"].includes(location.hostname)
-    && (previewParams.has("shell-preview") || previewParams.has("prejoin-preview"));
+    && (previewParams.has("shell-preview") || previewParams.has("prejoin-preview") || previewParams.has("auth-preview") || previewModal);
   if (isLocalPreview) {
+    if (previewParams.has("auth-preview")) return;
     document.getElementById("authScreen")?.classList.add("hidden");
     document.getElementById("app")?.classList.remove("hidden");
     if (previewParams.has("prejoin-preview")) {
@@ -57,6 +59,7 @@ async function start() {
       if (online) online.textContent = "4 pessoas têm acesso a esta sala.";
       if (name) name.value = "Felipe";
     }
+    if (previewModal) document.getElementById(previewModal)?.classList.remove("hidden");
     return;
   }
 

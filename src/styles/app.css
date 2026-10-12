@@ -170,6 +170,220 @@ body,
   box-shadow: 0 10px 26px #00000024, 0 1px 0 #ffffff08 inset;
 }
 
+/* Etapa 4 — login e superfícies complementares */
+[data-component="auth-screen"] {
+  position: relative;
+  overflow: hidden;
+  border-top: 0;
+  background:
+    radial-gradient(circle at 18% 25%, #7c3aed2b, transparent 30%),
+    radial-gradient(circle at 82% 75%, #3b82f61a, transparent 28%),
+    linear-gradient(145deg, #100d18, #17131f 52%, #0d0c13);
+}
+
+[data-component="auth-screen"]::before,
+[data-component="auth-screen"]::after {
+  content: "";
+  position: absolute;
+  width: 360px;
+  height: 360px;
+  border: 1px solid #a78bfa17;
+  border-radius: 42%;
+  transform: rotate(28deg);
+  pointer-events: none;
+}
+
+[data-component="auth-screen"]::before { top: -210px; right: -80px; }
+[data-component="auth-screen"]::after { bottom: -240px; left: -110px; }
+
+[data-component="auth-screen"] .auth-brand {
+  z-index: 2;
+}
+
+[data-component="auth-screen"] .auth-brand .wordmark {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+[data-component="auth-screen"] .auth-card {
+  position: relative;
+  z-index: 1;
+  width: min(480px, 100%);
+  padding: 44px;
+  border-color: #a78bfa2b;
+  border-radius: 26px;
+  background: linear-gradient(160deg, #2a2637f2, #1d1a27f2);
+  box-shadow: 0 35px 100px #05040a80, 0 1px 0 #ffffff14 inset;
+  backdrop-filter: blur(24px);
+}
+
+[data-component="auth-screen"] .auth-emblem {
+  background: linear-gradient(145deg, #7c4ee4, #4b287e);
+  border: 1px solid #ffffff17;
+  box-shadow: 0 16px 35px #7449dc42;
+}
+
+.auth-eyebrow {
+  display: block;
+  margin-bottom: 12px;
+  color: #bda4ef;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .14em;
+}
+
+[data-component="auth-screen"] .google-slot {
+  padding: 7px;
+  border: 1px solid #ffffff0d;
+  border-radius: 14px;
+  background: #ffffff06;
+}
+
+.complementary-modal {
+  border-color: #a78bfa2e;
+  background: linear-gradient(160deg, #2a2637f7, #1d1a27f7);
+  box-shadow: 0 32px 90px #05040a8c, 0 1px 0 #ffffff12 inset;
+}
+
+.complementary-modal .modal-close {
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+}
+
+.complementary-modal .modal-close:hover {
+  border-color: #ffffff12;
+}
+
+.complementary-modal .modal-icon,
+.settings-heading-icon {
+  display: grid;
+  place-items: center;
+  color: #d8c3ff;
+  background: linear-gradient(145deg, #5d3c91, #3b275a);
+  border: 1px solid #ffffff12;
+  box-shadow: 0 10px 28px #0003;
+}
+
+.complementary-modal .modal-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.settings-heading-icon {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 14px;
+}
+
+.settings-heading-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.complementary-modal .primary-button svg,
+.copy-field button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.invite-manager-modal {
+  width: min(680px, 100%);
+}
+
+.invite-create-row {
+  padding: 16px;
+  border: 1px solid #ffffff0d;
+  border-radius: 14px;
+  background: #ffffff05;
+}
+
+.invite-create-row .primary-button {
+  white-space: nowrap;
+}
+
+.copy-field button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.photo-editor {
+  padding: 18px;
+  border: 1px solid #ffffff0d;
+  border-radius: 16px;
+  background: #ffffff05;
+}
+
+.photo-preview {
+  box-shadow: 0 14px 32px #0005, 0 0 0 4px #a78bfa14;
+}
+
+.devices-modal {
+  width: min(780px, 100%);
+}
+
+.device-sections {
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.device-card {
+  position: relative;
+  padding: 18px;
+  border: 1px solid #ffffff0d;
+  border-radius: 16px;
+  background: #ffffff05;
+}
+
+.device-card > label {
+  margin-top: 2px;
+  padding-right: 36px;
+}
+
+.device-card-icon {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: #6f48a840;
+  color: #cbb0f5;
+}
+
+.device-card-icon svg { width: 16px; height: 16px; }
+
+.device-privacy {
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: #17131f;
+  text-align: center;
+}
+
+.member-context {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 18px;
+  padding: 11px 13px;
+  border: 1px solid #a78bfa24;
+  border-radius: 10px;
+  background: #6f48a815;
+  color: #bfb0ce;
+  font-size: 11px;
+}
+
+.member-context svg {
+  width: 16px;
+  height: 16px;
+  color: #b794f4;
+}
+
 /* Etapa 3 — experiência de chamada */
 .prejoin-modal {
   width: min(920px, 100%);
@@ -417,6 +631,28 @@ body,
   [data-component="room-header"] {
     height: 68px;
     padding-inline: 12px;
+  }
+
+  [data-component="auth-screen"] .auth-card {
+    padding: 34px 22px;
+    border-radius: 22px;
+  }
+
+  .complementary-modal {
+    border-radius: 18px;
+  }
+
+  .invite-create-row {
+    padding: 13px;
+  }
+
+  .photo-editor {
+    align-items: flex-start;
+    padding: 14px;
+  }
+
+  .device-card {
+    padding: 15px;
   }
 
   .prejoin-modal {

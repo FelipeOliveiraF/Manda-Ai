@@ -33,9 +33,15 @@ Criar uma base moderna e escalável sem interromper as funcionalidades já valid
 
 ## Próximas etapas
 
-### 4. Telas complementares
+## Etapa 4 concluída
 
-Migrar membros, convites, perfil, dispositivos, login, páginas de convite e telas legais.
+- Login, criação e personalização de salas agora são superfícies React nativas.
+- Perfil, foto do usuário e configuração de áudio e vídeo foram migrados para componentes próprios.
+- Gestão de membros, convites gerenciáveis e aceite de convite agora usam componentes React.
+- As rotas legais continuam renderizadas diretamente pelo servidor para carregamento independente e receberam integração visual com o produto.
+- A camada `LegacySurface` deixou de participar da interface em execução.
+
+## Próximas etapas
 
 ### 5. Remoção da compatibilidade
 
