@@ -1,21 +1,41 @@
-# Sites Worker ESM starter
+# Mostra aí
 
-Use this starter for a static microsite, click counter, or simple internal UI whose state is browser-scoped. It has no dependencies and needs no install.
+Aplicação web para salas privadas com compartilhamento de tela, câmera, áudio e chat.
 
-Edit `worker/index.js`, then publish through the Sites hosting workflow with this starter's build and validation in `commands`.
+## Stack — etapa 1.5
 
-The build copies only `worker/index.js` and `.openai/hosting.json`. Do not add standalone asset files. Embed any essential raster bytes in `worker/index.js` and serve or reference them as a data URL.
+- React 19 + TypeScript
+- Vite 6
+- Tailwind CSS 4
+- Radix UI, Lucide e Framer Motion como base do novo sistema de componentes
+- Supabase para autenticação, dados, Realtime e Storage
+- PeerJS/WebRTC para mídia entre participantes
+- Worker ESM para publicação no Sites
 
-Pass these argument arrays as `commands`:
+## Arquitetura de migração
 
-```json
-[
-  ["bash", "scripts/build.sh"],
-  ["node", "scripts/validate-artifact.mjs"]
-]
+A interface já é montada pelo React. Para preservar integralmente o comportamento validado, a etapa 1.5 mantém a lógica existente em uma camada temporária de compatibilidade:
+
+1. `worker/page.js`, `worker/styles.js` e `worker/app.js` continuam sendo a referência do produto atual.
+2. `scripts/prepare-react.mjs` transforma a marcação e os estilos em módulos consumidos pelo React.
+3. `src/LegacySurface.tsx` preserva os IDs e seletores usados pela lógica atual.
+4. `src/components/ui/` contém os componentes primitivos da nova interface.
+5. Nas próximas etapas, cada área da `LegacySurface` será substituída por componentes React nativos sem uma reescrita arriscada de Supabase ou WebRTC.
+
+## Desenvolvimento
+
+```bash
+npm install
+npm run build
+npm run check
+npm run preview
 ```
 
-The deterministic build produces:
+O preview local fica em `http://127.0.0.1:4173/`.
+
+## Build
+
+O Vite gera os bundles modernos e `scripts/package-react-worker.mjs` os empacota no artefato esperado pelo Sites:
 
 ```text
 dist/
@@ -25,4 +45,4 @@ dist/
     └── index.js
 ```
 
-`dist/server/index.js` is an ES module with a default export containing `fetch(request, env, ctx)`. Edit `worker/index.js`, not the generated file under `dist/`.
+O arquivo em `dist/` é gerado e não deve ser editado manualmente.

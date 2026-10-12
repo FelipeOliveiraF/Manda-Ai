@@ -1,3 +1,6 @@
 dist/
 site.tar.gz
 site-deploy*.tar.gz
+node_modules/
+.vite-dist/
+src/generated/

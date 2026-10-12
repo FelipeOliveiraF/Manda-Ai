@@ -22,4 +22,15 @@ assert.equal(
   `${pathToFileURL(workerPath)} must export default.fetch`,
 );
 
-console.log("Artifact is valid ESM and exports default.fetch");
+const fetchAsset = async (pathname) => workerModule.default.fetch(new Request(`https://local.invalid${pathname}`));
+const home = await (await fetchAsset("/")).text();
+assert.match(home, /src="\/app\.js"/);
+assert.match(home, /href="\/app\.css"/);
+assert.doesNotMatch(home, /\/assets\/app\.(?:js|css)/);
+for (const pathname of ["/app.js", "/app.css", "/legacy-app.js", "/privacy", "/terms"]) {
+  const response = await fetchAsset(pathname);
+  assert.equal(response.status, 200, `${pathname} should be served`);
+  assert.ok((await response.text()).length > 20, `${pathname} should not be empty`);
+}
+
+console.log("Artifact is valid ESM, serves the React entrypoint and exports default.fetch");
