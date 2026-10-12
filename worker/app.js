@@ -20,8 +20,14 @@ export const appScript = String.raw`
   let modalReturnFocus = null;
   let rooms = [];
   let activeRoom = null;
+  let activeMembership = null;
+  const roomMembers = new Map();
+  let roomChannels = [];
+  let activeChannel = null;
   let pendingInvite = new URLSearchParams(location.search).get('invite') || '';
   let chatChannel = null;
+  let roomControlChannel = null;
+  let roomControlTimer = null;
   let googleInitialized = false;
   let sessionIdentity = undefined;
   let peer = null;
@@ -47,6 +53,9 @@ export const appScript = String.raw`
     const meta = currentUser && currentUser.user_metadata || {};
     return String(ownProfile?.display_name || meta.full_name || meta.name || (currentUser && currentUser.email || '').split('@')[0] || 'Amigo').slice(0, 60);
   }
+  function roomUserName() { return String(activeMembership?.display_name || userName()).slice(0, 60); }
+  function isRoomAdmin() { return Boolean(activeMembership && ['owner', 'admin'].includes(activeMembership.role)); }
+  function roleLabel(role) { return role === 'owner' ? 'dono' : role === 'admin' ? 'administrador' : 'membro'; }
   function avatarUrl() {
     return String(ownProfile ? ownProfile.avatar_url || '' : currentUser?.user_metadata?.avatar_url || '');
   }
@@ -231,10 +240,10 @@ export const appScript = String.raw`
     $('#messages').innerHTML = '<div class="chat-empty"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-1 2V11.5a8.5 8.5 0 0 1 18 0Z"/><path d="M7 9h10M7 13h6"/></svg></span><strong>O chat começa aqui</strong><small>As mensagens desta sala aparecem para todos os membros.</small></div>';
   }
   async function loadMessages() {
-    if (!activeRoom) return;
-    const roomId = activeRoom.id;
-    const result = await db.from('room_messages').select('id,body,created_at,user_id,profiles(display_name,avatar_url)').eq('room_id', roomId).order('created_at', { ascending: true }).limit(200);
-    if (result.error || !activeRoom || activeRoom.id !== roomId) return;
+    if (!activeRoom || !activeChannel) return;
+    const roomId = activeRoom.id, channelId = activeChannel.id;
+    const result = await db.from('room_messages').select('id,body,created_at,user_id,channel_id,profiles(display_name,avatar_url)').eq('channel_id', channelId).order('created_at', { ascending: true }).limit(200);
+    if (result.error || !activeRoom || activeRoom.id !== roomId || !activeChannel || activeChannel.id !== channelId) return;
     renderMessages(result.data || []);
   }
   function renderMessages(items) {
@@ -245,7 +254,8 @@ export const appScript = String.raw`
     }
     items.forEach(function (item) {
       const profile = item.profiles || {};
-      const name = profile.display_name || (item.user_id === currentUser.id ? userName() : 'Amigo');
+      const membership = roomMembers.get(item.user_id);
+      const name = membership?.display_name || profile.display_name || (item.user_id === currentUser.id ? roomUserName() : 'Amigo');
       const row = document.createElement('article'); row.className = 'message';
       const avatar = document.createElement('span'); avatar.className = 'message-avatar'; setAvatar(avatar, name, profile.avatar_url || '');
       const content = document.createElement('div');
@@ -259,18 +269,65 @@ export const appScript = String.raw`
   }
   function subscribeChat() {
     resetChat();
+    if (!activeRoom || !activeChannel) return;
+    const channelId = activeChannel.id;
+    chatChannel = db.channel('room-chat-' + channelId).on('postgres_changes', { event: '*', schema: 'public', table: 'room_messages', filter: 'channel_id=eq.' + channelId }, function () { loadMessages(); }).subscribe();
+    loadMessages();
+  }
+  function renderChannels() {
+    const tabs = $('#channelTabs'); tabs.textContent = '';
+    roomChannels.forEach(function (channel) {
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'channel-tab' + (activeChannel?.id === channel.id ? ' active' : '');
+      button.textContent = '# ' + channel.name; button.title = 'Abrir #' + channel.name;
+      button.addEventListener('click', function () { selectChannel(channel); });
+      tabs.appendChild(button);
+    });
+    if (isRoomAdmin()) {
+      const add = document.createElement('button'); add.type = 'button'; add.className = 'channel-add'; add.textContent = '+'; add.title = 'Criar chat de texto'; add.setAttribute('aria-label', 'Criar chat de texto');
+      add.addEventListener('click', function () { $('#channelNameInput').value = ''; $('#channelError').textContent = ''; openModal('channelModal'); });
+      tabs.appendChild(add);
+    }
+  }
+  function selectChannel(channel) {
+    activeChannel = channel;
+    $('#activeChannelName').textContent = '# ' + channel.name;
+    $('#messageInput').placeholder = 'Mensagem em #' + channel.name;
+    renderChannels(); subscribeChat();
+  }
+  async function loadChannels(preferredId) {
     if (!activeRoom) return;
     const roomId = activeRoom.id;
-    chatChannel = db.channel('room-chat-' + roomId).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'room_messages', filter: 'room_id=eq.' + roomId }, function () { loadMessages(); }).subscribe();
-    loadMessages();
+    const result = await db.from('room_channels').select('id,room_id,name,position,created_by,created_at').eq('room_id', roomId).order('position').order('id');
+    if (result.error || !activeRoom || activeRoom.id !== roomId) { showToast('Não consegui carregar os chats desta sala.'); return; }
+    roomChannels = result.data || [];
+    const next = roomChannels.find(function (channel) { return channel.id === preferredId; }) || roomChannels.find(function (channel) { return channel.id === activeChannel?.id; }) || roomChannels[0] || null;
+    if (next) selectChannel(next); else { activeChannel = null; resetChat(); renderChannels(); }
+  }
+  async function createChannel(event) {
+    event.preventDefault();
+    const name = $('#channelNameInput').value.trim(), button = event.currentTarget.querySelector('button[type=submit]');
+    if (!activeRoom || !name) return;
+    button.disabled = true; button.textContent = 'Criando…'; $('#channelError').textContent = '';
+    const result = await db.rpc('create_room_channel', { p_room_id: activeRoom.id, p_name: name });
+    button.disabled = false; button.textContent = 'Criar chat';
+    if (result.error) { $('#channelError').textContent = /already exists/i.test(result.error.message || '') ? 'Já existe um chat com esse nome.' : 'Não consegui criar este chat.'; return; }
+    const created = Array.isArray(result.data) ? result.data[0] : result.data;
+    closeModal('channelModal'); await loadChannels(created?.id); showToast('Chat criado.');
+  }
+  async function clearActiveChannel() {
+    if (!activeChannel || !isRoomAdmin()) return;
+    if (!confirm('Limpar todas as mensagens de #' + activeChannel.name + '? Esta ação não pode ser desfeita.')) return;
+    const result = await db.rpc('clear_room_channel', { p_channel_id: activeChannel.id });
+    if (result.error) { showToast('Não consegui limpar este chat.'); return; }
+    await loadMessages(); showToast('Chat limpo.');
   }
   async function sendMessage(event) {
     event.preventDefault();
     const input = $('#messageInput');
     const body = input.value.trim();
-    if (!activeRoom || !body) return;
+    if (!activeRoom || !activeChannel || !body) return;
     input.value = '';
-    const result = await db.from('room_messages').insert({ room_id: activeRoom.id, user_id: currentUser.id, body: body });
+    const result = await db.from('room_messages').insert({ room_id: activeRoom.id, channel_id: activeChannel.id, user_id: currentUser.id, body: body });
     if (result.error) { input.value = body; showToast('Não consegui enviar a mensagem.'); }
   }
 
@@ -294,6 +351,14 @@ export const appScript = String.raw`
   }
   function findTile(peerId) { return Array.from($('#mediaGrid').children).find(function (tile) { return tile.dataset.peerId === peerId; }); }
   function fullscreenElement() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+  function toggleTileFocus(tile) {
+    const grid = $('#mediaGrid'), active = tile.classList.contains('focused');
+    Array.from(grid.children).forEach(function (item) { item.classList.remove('focused'); });
+    grid.classList.toggle('focus-mode', !active);
+    tile.classList.toggle('focused', !active);
+    const button = tile.querySelector('.tile-focus');
+    if (button) { button.classList.toggle('active', !active); button.title = active ? 'Destacar transmissão' : 'Voltar para a grade'; }
+  }
   async function toggleTileFullscreen(tile) {
     try {
       if (fullscreenElement() === tile) {
@@ -341,6 +406,10 @@ export const appScript = String.raw`
       mute.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path class="volume-waves" d="M15 9a4 4 0 0 1 0 6m3-9a8 8 0 0 1 0 12"/></svg>';
       const slider = document.createElement('input'); slider.type = 'range'; slider.className = 'tile-volume-range'; slider.min = '0'; slider.max = '1'; slider.step = '0.05'; slider.value = '1';
       const amount = document.createElement('span'); amount.className = 'tile-volume-value'; amount.textContent = '100%';
+      const brand = document.createElement('div'); brand.className = 'tile-fullscreen-brand'; brand.innerHTML = '<span class="brand-mark">M</span><strong>Mostra aí</strong><small>Você está vendo uma transmissão</small>';
+      const focus = document.createElement('button'); focus.type = 'button'; focus.className = 'tile-focus hidden'; focus.title = 'Destacar transmissão'; focus.setAttribute('aria-label', 'Destacar transmissão dentro do Mostra aí');
+      focus.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/><path d="M9 9h6v6H9z"/></svg>';
+      focus.addEventListener('click', function (event) { event.stopPropagation(); toggleTileFocus(tile); });
       const fullscreen = document.createElement('button'); fullscreen.type = 'button'; fullscreen.className = 'tile-fullscreen hidden';
       fullscreen.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>';
       fullscreen.addEventListener('click', function (event) { event.stopPropagation(); toggleTileFullscreen(tile); });
@@ -366,7 +435,7 @@ export const appScript = String.raw`
         mute.setAttribute('aria-label', video.muted ? 'Reativar áudio' : 'Silenciar áudio');
         video.play().catch(function () {});
       });
-      volume.append(mute, slider, amount); tile.append(avatar, video, meta, volume, fullscreen); $('#mediaGrid').appendChild(tile);
+      volume.append(mute, slider, amount); tile.append(avatar, video, meta, volume, brand, focus, fullscreen); $('#mediaGrid').appendChild(tile);
     }
     setAvatar(tile.querySelector('.tile-avatar span'), name, local ? avatarUrl() : memberProfiles.get(peerUserIds.get(peerId))?.avatar_url || '');
     tile.querySelector('.tile-name').textContent = name + (local ? ' (você)' : '');
@@ -374,11 +443,13 @@ export const appScript = String.raw`
     tile.classList.toggle('screen-share', kind === 'screen');
     const video = tile.querySelector('video'); const avatar = tile.querySelector('.tile-avatar');
     const volume = tile.querySelector('.tile-volume'); const slider = tile.querySelector('.tile-volume-range'); const mute = tile.querySelector('.tile-mute');
-    const fullscreen = tile.querySelector('.tile-fullscreen');
+    const fullscreen = tile.querySelector('.tile-fullscreen'); const focus = tile.querySelector('.tile-focus');
     const hasVideo = Boolean(stream && stream.getVideoTracks().some(function (track) { return track.readyState === 'live'; }));
     const hasAudio = Boolean(stream && stream.getAudioTracks().some(function (track) { return track.readyState === 'live'; }));
     volume.classList.toggle('hidden', local || !hasAudio);
     fullscreen.classList.toggle('hidden', kind !== 'screen' || !hasVideo);
+    focus.classList.toggle('hidden', kind !== 'screen' || !hasVideo);
+    if (kind !== 'screen' && tile.classList.contains('focused')) toggleTileFocus(tile);
     slider.setAttribute('aria-label', 'Volume do áudio de ' + name);
     if (stream && stream.getTracks().length) {
       if (video.srcObject !== stream) video.srcObject = stream;
@@ -415,7 +486,7 @@ export const appScript = String.raw`
   function callPeer(peerId) {
     const stream = outgoingStream();
     if (!peer || peerId === peer.id || !stream.getTracks().length || outgoingCalls.has(peerId)) return;
-    const call = peer.call(peerId, stream, { metadata: { name: userName(), kind: localKind() } });
+    const call = peer.call(peerId, stream, { metadata: { name: roomUserName(), kind: localKind() } });
     if (!call) return;
     outgoingCalls.set(peerId, call);
     call.on('close', function () { if (outgoingCalls.get(peerId) === call) outgoingCalls.delete(peerId); });
@@ -439,7 +510,7 @@ export const appScript = String.raw`
     targetPeer.on('disconnected', function () { if (!leaving) setConnection('Reconectando…', false); });
   }
   function becomeCoordinator(targetPeer) {
-    isCoordinator = true; peer = targetPeer; roster.set(peer.id, userName()); peerUserIds.set(peer.id,currentUser.id); setConnection('Sala conectada', true); broadcastRoster();
+    isCoordinator = true; peer = targetPeer; roster.set(peer.id, roomUserName()); peerUserIds.set(peer.id,currentUser.id); setConnection('Sala conectada', true); broadcastRoster();
     peer.on('connection', function (connection) {
       dataConnections.set(connection.peer, connection); if(connection.metadata?.userId) peerUserIds.set(connection.peer,connection.metadata.userId);
       connection.on('open', function () { roster.set(connection.peer, String(connection.metadata && connection.metadata.nickname || 'Amigo').slice(0, 60)); broadcastRoster(); });
@@ -451,9 +522,9 @@ export const appScript = String.raw`
     if (leaving || !activeRoom) return;
     const memberPeer = new Peer({ debug: 1 }); peer = memberPeer; isCoordinator = false; attachPeerHandlers(memberPeer);
     memberPeer.on('open', function () {
-      const connection = memberPeer.connect(coordinatorId, { reliable: true, metadata: { nickname: userName(), userId: currentUser.id } }); coordinatorConnection = connection;
+      const connection = memberPeer.connect(coordinatorId, { reliable: true, metadata: { nickname: roomUserName(), userId: currentUser.id } }); coordinatorConnection = connection;
       const timeout = setTimeout(function () { if (!connection.open) setConnection('Não consegui encontrar a sala', false); }, 9000);
-      connection.on('open', function () { clearTimeout(timeout); setConnection('Sala conectada', true); connection.send({ type: 'intro', nickname: userName() }); });
+      connection.on('open', function () { clearTimeout(timeout); setConnection('Sala conectada', true); connection.send({ type: 'intro', nickname: roomUserName() }); });
       connection.on('data', function (data) { if (data && data.type === 'roster' && Array.isArray(data.items)) applyRoster(data.items); });
       connection.on('close', function () { if (!leaving) setConnection('A conexão da sala caiu. Entre novamente.', false); });
     });
@@ -485,6 +556,7 @@ export const appScript = String.raw`
       const on = Boolean(item[1] && item[1].readyState === 'live');
       const button = $('#' + item[0]); button.classList.toggle('active',on); button.setAttribute('aria-pressed',String(on)); button.setAttribute('aria-label',on ? item[2] : item[3]); button.title = on ? item[2] : item[3]; button.querySelector('small').textContent = on ? item[2] : item[3];
     });
+    if (activeMembership) applyMembershipControls();
   }
   function microphoneConstraints() { return Object.assign({echoCancellation:true,noiseSuppression:true}, micDevice ? {deviceId:{exact:micDevice}} : {}); }
   function cameraConstraints() { return Object.assign({width:{ideal:1280},height:{ideal:720}}, cameraDevice ? {deviceId:{exact:cameraDevice}} : {}); }
@@ -496,6 +568,7 @@ export const appScript = String.raw`
     return 'Não foi possível acessar o dispositivo. Tente novamente.';
   }
   async function replaceMicrophone() {
+    if (activeMembership?.is_muted) throw new Error('moderated');
     const stream = await navigator.mediaDevices.getUserMedia({audio:microphoneConstraints(),video:false});
     if (!activeRoom) { stream.getTracks().forEach(t=>t.stop()); return; }
     const previous = microphoneTrack; microphoneTrack = stream.getAudioTracks()[0]; previous?.stop();
@@ -511,9 +584,10 @@ export const appScript = String.raw`
   }
   async function toggleMicrophone() {
     if (!activeRoom) return;
+    if (activeMembership?.is_muted) { showToast('Seu microfone está bloqueado pela administração.'); return; }
     $('#micButton').disabled=true;
     try { if (microphoneTrack) { microphoneTrack.stop(); microphoneTrack=null; refreshPublishing(); } else await replaceMicrophone(); }
-    catch(error){showToast(mediaError(error));} finally{$('#micButton').disabled=false;}
+    catch(error){showToast(error.message === 'moderated' ? 'Seu microfone está bloqueado pela administração.' : mediaError(error));} finally{$('#micButton').disabled=false;applyMembershipControls();}
   }
   async function toggleCamera() {
     if (!activeRoom) return;
@@ -522,6 +596,7 @@ export const appScript = String.raw`
     catch(error){showToast(mediaError(error));}finally{$('#cameraButton').disabled=false;}
   }
   async function toggleScreen() {
+    if (activeMembership && !activeMembership.can_share_screen) { showToast('O compartilhamento de tela está bloqueado pela administração.'); return; }
     try {
       if (screenTrack) { const oldVideo = screenTrack; const oldAudio = screenAudioTracks.slice(); screenTrack = null; screenAudioTracks = []; oldVideo.stop(); oldAudio.forEach(function (track) { track.stop(); }); }
       else {
@@ -553,16 +628,24 @@ export const appScript = String.raw`
 
   async function openRoom(room) {
     if (activeRoom && activeRoom.id === room.id) { $('#sidebar').classList.remove('open'); return; }
-    cleanupPeer(); activeRoom = room; renderRooms(); updateRoomHeading();
+    cleanupPeer();
+    stopRoomControls();
+    activeRoom = room; activeMembership = null; roomMembers.clear(); roomChannels = []; activeChannel = null; resetChat(); renderRooms(); updateRoomHeading();
     $('#emptyStage').classList.add('hidden'); $('#mediaStage').classList.remove('hidden'); $('#mediaControls').classList.remove('hidden');
-    $('#roomTitle').textContent = room.name; $('#roomSubtitle').textContent = 'Sala ' + room.code; $('#chatRoomName').textContent = '#' + room.name;
-    $('#inviteButton').disabled = false; $('#messageInput').disabled = false; $('#sendMessage').disabled = false; $('#messageInput').placeholder = 'Mensagem em #' + room.name;
-    $('#sidebar').classList.remove('open'); setConnection('Conectando à sala…', false); subscribeChat(); await startPeerRoom(room);
+    $('#roomTitle').textContent = room.name; $('#roomSubtitle').textContent = 'Sala ' + room.code; $('#chatRoomName').textContent = room.name;
+    $('#inviteButton').disabled = false; $('#messageInput').disabled = true; $('#sendMessage').disabled = true; $('#messageInput').placeholder = 'Carregando chats…';
+    $('#sidebar').classList.remove('open'); setConnection('Conectando à sala…', false);
+    if (!await loadRoomMembers()) return;
+    await loadChannels();
+    $('#messageInput').disabled = !activeChannel; $('#sendMessage').disabled = !activeChannel;
+    subscribeRoomControls(); await startPeerRoom(room);
   }
   function leaveActiveRoom() {
-    cleanupPeer(); activeRoom = null; renderRooms(); resetChat(); $('#roomSettingsButton').classList.add('hidden'); $('#headerRoomAvatar').style.backgroundImage=''; $('#headerRoomAvatar').textContent='#';
+    cleanupPeer(); stopRoomControls();
+    activeRoom = null; activeMembership = null; roomMembers.clear(); roomChannels = []; activeChannel = null; renderRooms(); resetChat(); renderChannels();
+    $('#roomSettingsButton').classList.add('hidden'); $('#manageRoomButton').classList.add('hidden'); $('#roomIdentityButton').classList.add('hidden'); $('#clearChannel').classList.add('hidden'); $('#headerRoomAvatar').style.backgroundImage=''; $('#headerRoomAvatar').textContent='#';
     $('#emptyStage').classList.remove('hidden'); $('#mediaStage').classList.add('hidden'); $('#mediaControls').classList.add('hidden');
-    $('#roomTitle').textContent = 'Escolha uma sala'; $('#roomSubtitle').textContent = 'Suas salas ficam salvas aqui'; $('#chatRoomName').textContent = 'Selecione uma sala'; $('#participantCount').textContent = '0 online';
+    $('#roomTitle').textContent = 'Escolha uma sala'; $('#roomSubtitle').textContent = 'Suas salas ficam salvas aqui'; $('#chatRoomName').textContent = 'Selecione uma sala'; $('#activeChannelName').textContent = 'Conversa'; $('#participantCount').textContent = '0 online';
     $('#inviteButton').disabled = true; $('#messageInput').disabled = true; $('#sendMessage').disabled = true; $('#messageInput').placeholder = 'Escolha uma sala para conversar';
   }
 
@@ -574,7 +657,7 @@ export const appScript = String.raw`
     if (pendingInvite) await loadInvitePreview();
   }
   async function bootSignedOut() {
-    currentUser = null; ownProfile=null; stopPreviews(); resetChat(); document.querySelectorAll('.modal-backdrop').forEach(m=>m.classList.add('hidden')); cleanupPeer(); activeRoom = null; $('#app').classList.add('hidden'); $('#authScreen').classList.remove('hidden'); await loadInvitePreview(); await initGoogleButton();
+    currentUser = null; ownProfile=null; stopPreviews(); stopRoomControls(); resetChat(); document.querySelectorAll('.modal-backdrop').forEach(m=>m.classList.add('hidden')); cleanupPeer(); activeRoom = null; $('#app').classList.add('hidden'); $('#authScreen').classList.remove('hidden'); await loadInvitePreview(); await initGoogleButton();
   }
   function handleSession(session) {
     const user = session && session.user;
@@ -586,6 +669,8 @@ export const appScript = String.raw`
 
   $('#createForm').addEventListener('submit', createRoom);
   $('#messageForm').addEventListener('submit', sendMessage);
+  $('#channelForm').addEventListener('submit', createChannel);
+  $('#roomIdentityForm').addEventListener('submit', saveRoomNickname);
   ['newRoom', 'newRoomWide', 'emptyCreate'].forEach(function (id) { $('#' + id).addEventListener('click', function () { openModal('createModal'); setTimeout(function () { $('#roomNameInput').focus(); }, 50); }); });
   document.querySelectorAll('[data-close]').forEach(function (button) { button.addEventListener('click', function () { closeModal(button.dataset.close); }); });
   document.querySelectorAll('.modal-backdrop').forEach(function (backdrop) { backdrop.addEventListener('click', function (event) { if (event.target === backdrop && backdrop.id !== 'acceptInviteModal') closeModal(backdrop.id); }); });
@@ -605,6 +690,7 @@ export const appScript = String.raw`
     }
   }
   $('#toggleChat').addEventListener('click', function () { toggleChat(); }); $('#closeChat').addEventListener('click', function () { toggleChat(false); });
+  $('#clearChannel').addEventListener('click', clearActiveChannel);
   $('#micButton').addEventListener('click', toggleMicrophone); $('#cameraButton').addEventListener('click', toggleCamera); $('#screenButton').addEventListener('click', toggleScreen); $('#leaveButton').addEventListener('click', leaveActiveRoom);
   window.addEventListener('beforeunload', function () { stopPreviews(); leaving = true; stopMedia(); peer?.destroy(); });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(function () {});
@@ -631,10 +717,132 @@ export const appScript = String.raw`
       renderRoster();
     }finally{loadingMembers=false;}
   }
+  async function loadRoomMembers() {
+    if (!activeRoom) return false;
+    const roomId = activeRoom.id;
+    const result = await db.from('room_members').select('room_id,user_id,role,display_name,is_muted,can_share_screen,created_at,last_joined_at').eq('room_id', roomId);
+    if (result.error || !activeRoom || activeRoom.id !== roomId) { showToast('Não consegui carregar os membros da sala.'); return false; }
+    roomMembers.clear();
+    (result.data || []).forEach(function (member) { roomMembers.set(member.user_id, member); });
+    activeMembership = roomMembers.get(currentUser.id) || null;
+    if (!activeMembership) {
+      leaveActiveRoom();
+      showToast('Você foi removido desta sala.');
+      return false;
+    }
+    const ids = Array.from(roomMembers.keys());
+    if (ids.length) {
+      const profiles = await db.from('profiles').select('id,display_name,avatar_url').in('id', ids);
+      (profiles.data || []).forEach(function (profile) { memberProfiles.set(profile.id, profile); });
+    }
+    applyMembershipControls(); updateRoomHeading(); renderMemberManagement(); renderChannels(); renderRoster();
+    return true;
+  }
+  function applyMembershipControls() {
+    if (!activeMembership) return;
+    if (activeMembership.is_muted && microphoneTrack) { microphoneTrack.stop(); microphoneTrack = null; refreshPublishing(); showToast('Seu microfone foi silenciado pela administração.'); }
+    if (!activeMembership.can_share_screen && screenTrack) {
+      const oldVideo = screenTrack, oldAudio = screenAudioTracks.slice(); screenTrack = null; screenAudioTracks = []; oldVideo.stop(); oldAudio.forEach(function (track) { track.stop(); }); refreshPublishing();
+      showToast('Seu compartilhamento de tela foi interrompido pela administração.');
+    }
+    $('#micButton').disabled = Boolean(activeMembership.is_muted);
+    $('#micButton').title = activeMembership.is_muted ? 'Microfone bloqueado pela administração' : ($('#micButton').getAttribute('aria-pressed') === 'true' ? 'Silenciar' : 'Ligar microfone');
+    $('#screenButton').disabled = !activeMembership.can_share_screen;
+    $('#screenButton').title = activeMembership.can_share_screen ? ($('#screenButton').getAttribute('aria-pressed') === 'true' ? 'Parar tela' : 'Compartilhar tela') : 'Compartilhamento bloqueado pela administração';
+  }
+  function stopRoomControls() {
+    if (roomControlChannel) db.removeChannel(roomControlChannel);
+    roomControlChannel = null;
+    if (roomControlTimer) clearInterval(roomControlTimer);
+    roomControlTimer = null;
+  }
+  function subscribeRoomControls() {
+    stopRoomControls();
+    if (!activeRoom) return;
+    const roomId = activeRoom.id;
+    roomControlChannel = db.channel('room-controls-' + roomId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_members', filter: 'room_id=eq.' + roomId }, function () { loadRoomMembers(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_channels', filter: 'room_id=eq.' + roomId }, function () { loadChannels(activeChannel?.id); })
+      .subscribe();
+    roomControlTimer = setInterval(function () {
+      if (activeRoom?.id === roomId) loadRoomMembers();
+    }, 15000);
+  }
+  function renderMemberManagement() {
+    const list = $('#memberList'); if (!list) return; list.textContent = '';
+    const members = Array.from(roomMembers.values()).sort(function (a, b) {
+      const weight = { owner: 0, admin: 1, member: 2 };
+      return (weight[a.role] - weight[b.role]) || a.display_name.localeCompare(b.display_name, 'pt-BR');
+    });
+    members.forEach(function (member) {
+      const row = document.createElement('article'); row.className = 'member-row';
+      const profile = memberProfiles.get(member.user_id) || {};
+      const person = document.createElement('div'); person.className = 'member-person';
+      const avatar = document.createElement('span'); avatar.className = 'account-avatar'; setAvatar(avatar, member.display_name, profile.avatar_url || '');
+      const copy = document.createElement('div'); copy.className = 'member-person-copy';
+      const name = document.createElement('strong'); name.textContent = member.display_name + (member.user_id === currentUser.id ? ' (você)' : '');
+      const badge = document.createElement('small'); badge.className = 'role-badge ' + member.role; badge.textContent = roleLabel(member.role);
+      copy.append(name, badge); person.append(avatar, copy); row.append(person);
+
+      const actions = document.createElement('div'); actions.className = 'member-actions';
+      const callerCanModerate = isRoomAdmin() && member.role !== 'owner' && (activeMembership.role === 'owner' || member.role === 'member');
+      if (activeMembership?.role === 'owner' && member.role !== 'owner') {
+        const role = document.createElement('button'); role.type = 'button'; role.className = 'member-action';
+        role.textContent = member.role === 'admin' ? 'Remover admin' : 'Tornar admin';
+        role.addEventListener('click', function () { setMemberRole(member, member.role === 'admin' ? 'member' : 'admin'); });
+        actions.append(role);
+      }
+      if (callerCanModerate) {
+        const mute = document.createElement('button'); mute.type = 'button'; mute.className = 'member-action' + (member.is_muted ? ' active' : '');
+        mute.textContent = member.is_muted ? 'Liberar microfone' : 'Silenciar';
+        mute.addEventListener('click', function () { setMemberControls(member, !member.is_muted, member.can_share_screen); });
+        const screen = document.createElement('button'); screen.type = 'button'; screen.className = 'member-action' + (!member.can_share_screen ? ' active' : '');
+        screen.textContent = member.can_share_screen ? 'Bloquear tela' : 'Liberar tela';
+        screen.addEventListener('click', function () { setMemberControls(member, member.is_muted, !member.can_share_screen); });
+        const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'member-action danger'; remove.textContent = 'Remover';
+        remove.addEventListener('click', function () { removeMember(member); });
+        actions.append(mute, screen, remove);
+      }
+      row.append(actions); list.appendChild(row);
+    });
+  }
+  async function saveRoomNickname(event) {
+    event.preventDefault();
+    if (!activeRoom) return;
+    const name = $('#roomNicknameInput').value.trim(), button = event.currentTarget.querySelector('button[type=submit]');
+    if (!name) return;
+    button.disabled = true; button.textContent = 'Salvando…'; $('#roomIdentityError').textContent = '';
+    const result = await db.rpc('update_room_nickname', { p_room_id: activeRoom.id, p_display_name: name });
+    button.disabled = false; button.textContent = 'Salvar nome';
+    if (result.error) { $('#roomIdentityError').textContent = 'Não consegui salvar seu nome nesta sala.'; return; }
+    await loadRoomMembers();
+    if (peer) { roster.set(peer.id, roomUserName()); if (isCoordinator) broadcastRoster(); else coordinatorConnection?.send({ type: 'intro', nickname: roomUserName() }); renderRoster(); }
+    closeModal('roomIdentityModal'); showToast('Seu nome nesta sala foi atualizado.');
+  }
+  async function setMemberRole(member, role) {
+    const result = await db.rpc('set_room_member_role', { p_room_id: activeRoom.id, p_user_id: member.user_id, p_role: role });
+    if (result.error) { showToast('Não consegui alterar este cargo.'); return; }
+    await loadRoomMembers(); showToast(role === 'admin' ? 'Administrador adicionado.' : 'Cargo de administrador removido.');
+  }
+  async function setMemberControls(member, isMuted, canShareScreen) {
+    const result = await db.rpc('set_room_member_controls', { p_room_id: activeRoom.id, p_user_id: member.user_id, p_is_muted: isMuted, p_can_share_screen: canShareScreen });
+    if (result.error) { showToast('Não consegui aplicar esta ação.'); return; }
+    await loadRoomMembers(); showToast('Permissões atualizadas.');
+  }
+  async function removeMember(member) {
+    if (!confirm('Remover ' + member.display_name + ' desta sala?')) return;
+    const result = await db.rpc('remove_room_member', { p_room_id: activeRoom.id, p_user_id: member.user_id });
+    if (result.error) { showToast('Não consegui remover esta pessoa.'); return; }
+    await loadRoomMembers(); showToast('Pessoa removida da sala.');
+  }
   function updateRoomHeading() {
     if(!activeRoom)return;
     setAvatar($('#headerRoomAvatar'),activeRoom.name,activeRoom.avatar_url);
     $('#roomSettingsButton').classList.toggle('hidden',activeRoom.owner_id!==currentUser.id);
+    $('#manageRoomButton').classList.toggle('hidden',!isRoomAdmin());
+    $('#roomIdentityButton').classList.toggle('hidden',!activeMembership);
+    $('#roomIdentityName').textContent=roomUserName();$('#roomIdentityRole').textContent=roleLabel(activeMembership?.role);setAvatar($('#roomIdentityAvatar'),roomUserName(),ownProfile?.avatar_url||'');
+    $('#clearChannel').classList.toggle('hidden',!isRoomAdmin());
     $('#roomTitle').textContent=activeRoom.name;$('#chatRoomName').textContent=activeRoom.name;
   }
   function resetDraft(kind) {
@@ -698,8 +906,8 @@ export const appScript = String.raw`
       const result=await db.from(isProfile?'profiles':'rooms').update(values).eq('id',id).select('id').single();
       if(result.error)throw new Error('Não consegui salvar. Confira sua conexão e tente novamente.');
       if(isProfile){
-        ownProfile=values;renderAccount();
-        if(peer){roster.set(peer.id,name);if(isCoordinator)broadcastRoster();else coordinatorConnection?.send({type:'intro',nickname:name});renderRoster();}
+        ownProfile=values;memberProfiles.set(currentUser.id,{id:currentUser.id,display_name:name,avatar_url:newPhoto});renderAccount();
+        if(peer){const liveName=roomUserName();roster.set(peer.id,liveName);if(isCoordinator)broadcastRoster();else coordinatorConnection?.send({type:'intro',nickname:liveName});renderRoster();}
       }else{
         rooms=rooms.map(room=>room.id===id?Object.assign({},room,values):room);
         if(activeRoom?.id===id){activeRoom=Object.assign({},activeRoom,values);updateRoomHeading();}
@@ -773,6 +981,8 @@ export const appScript = String.raw`
   function openDevices(focus) {openModal('devicesModal');enumerateDevices();if(focus)$('#'+focus).focus();}
   $('#profileButton').addEventListener('click',editProfile);$('#accountAvatar').addEventListener('click',editProfile);
   $('#roomSettingsButton').addEventListener('click',editRoom);
+  $('#roomIdentityButton').addEventListener('click',()=>{if(!activeMembership)return;$('#roomNicknameInput').value=roomUserName();$('#roomIdentityError').textContent='';openModal('roomIdentityModal');});
+  $('#manageRoomButton').addEventListener('click',()=>{renderMemberManagement();$('#manageRoomError').textContent='';openModal('manageRoomModal');});
   $('#profilePhoto').addEventListener('change',e=>choosePhoto('profile',e.target));$('#roomPhoto').addEventListener('change',e=>choosePhoto('room',e.target));
   $('#removeProfilePhoto').addEventListener('click',()=>{resetDraft('profile');profileDraftPhoto=null;setAvatar($('#profilePhotoPreview'),userName(),'');});
   $('#removeRoomPhoto').addEventListener('click',()=>{resetDraft('room');roomDraftPhoto=null;setAvatar($('#roomPhotoPreview'),activeRoom.name,'');});

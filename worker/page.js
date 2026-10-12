@@ -52,6 +52,8 @@ export const page = `<!doctype html>
         </div>
         <div class="room-actions">
           <span class="participant-count" id="participantCount">0 online</span>
+          <button class="identity-button hidden" id="roomIdentityButton" title="Alterar seu nome nesta sala"><span class="account-avatar" id="roomIdentityAvatar">A</span><span class="identity-copy"><strong id="roomIdentityName">Amigo</strong><small id="roomIdentityRole">membro</small></span></button>
+          <button class="square-button hidden" id="manageRoomButton" title="Gerenciar membros" aria-label="Gerenciar membros"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0112 0v3M17 8v8m-4-4h8"/></svg></button>
           <button class="square-button hidden" id="roomSettingsButton" title="Personalizar sala" aria-label="Personalizar sala"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 3-1 3-3 1 1 3-2 2 2 2-1 3 3 1 1 3h6l1-3 3-1-1-3 2-2-2-2 1-3-3-1-1-3z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="header-button" id="inviteButton" aria-label="Convidar pessoas" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0112 0v3M16 5a3 3 0 010 6m2 3a5 5 0 013 5v2"/></svg><span>Convidar</span></button>
           <button class="square-button" id="toggleChat" title="Abrir ou fechar chat" aria-label="Abrir ou fechar chat" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11a9 9 0 01-9 9H4l-2 2V11a9 9 0 0118-4"/><path d="M7 9h10M7 13h7"/></svg></button>
         </div>
@@ -79,7 +81,8 @@ export const page = `<!doctype html>
         </section>
 
         <aside class="chat-panel" id="chatPanel">
-          <div class="chat-head"><div><strong>Conversa</strong><small id="chatRoomName">Selecione uma sala</small></div><button id="closeChat" aria-label="Fechar conversa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
+          <div class="chat-head"><div><strong id="activeChannelName">Conversa</strong><small id="chatRoomName">Selecione uma sala</small></div><div class="chat-head-actions"><button class="hidden" id="clearChannel" title="Limpar este chat" aria-label="Limpar este chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 14h8l1-14M10 11v6m4-6v6"/></svg></button><button id="closeChat" aria-label="Fechar conversa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div></div>
+          <div class="channel-tabs" id="channelTabs"></div>
           <div class="messages" id="messages"><div class="chat-empty"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-1 2V11.5a8.5 8.5 0 0 1 18 0Z"/><path d="M7 9h10M7 13h6"/></svg></span><strong>O chat começa aqui</strong><small>As mensagens desta sala aparecem para todos os membros.</small></div></div>
           <form class="message-form" id="messageForm">
             <input aria-label="Mensagem" id="messageInput" maxlength="2000" autocomplete="off" placeholder="Escolha uma sala para conversar" disabled>
@@ -142,6 +145,36 @@ export const page = `<!doctype html>
       <label for="editRoomName">Nome da sala</label><input id="editRoomName" maxlength="60" required>
       <p class="form-error" id="roomSettingsError" role="alert"></p><button class="primary-button full" type="submit">Salvar alterações</button>
     </form>
+  </div>
+  <div class="modal-backdrop hidden" id="roomIdentityModal">
+    <form class="modal" id="roomIdentityForm">
+      <button class="modal-close" type="button" data-close="roomIdentityModal">×</button>
+      <div class="modal-icon">@</div><h2>Seu nome nesta sala</h2>
+      <p>Este nome vale apenas aqui. Em outras salas, você pode usar outro.</p>
+      <label for="roomNicknameInput">Nome na sala</label>
+      <input id="roomNicknameInput" maxlength="60" required autocomplete="nickname">
+      <p class="form-error" id="roomIdentityError" role="alert"></p>
+      <button class="primary-button full" type="submit">Salvar nome</button>
+    </form>
+  </div>
+  <div class="modal-backdrop hidden" id="channelModal">
+    <form class="modal" id="channelForm">
+      <button class="modal-close" type="button" data-close="channelModal">×</button>
+      <div class="modal-icon">#</div><h2>Novo chat de texto</h2>
+      <p>Crie outro assunto dentro desta mesma sala.</p>
+      <label for="channelNameInput">Nome do chat</label>
+      <input id="channelNameInput" maxlength="40" placeholder="Ex.: jogos, estudos, avisos" required>
+      <p class="form-error" id="channelError" role="alert"></p>
+      <button class="primary-button full" type="submit">Criar chat</button>
+    </form>
+  </div>
+  <div class="modal-backdrop hidden" id="manageRoomModal">
+    <div class="modal manage-modal">
+      <button class="modal-close" type="button" data-close="manageRoomModal">×</button>
+      <div class="settings-heading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0112 0v3M17 8v8m-4-4h8"/></svg><div><h2>Gerenciar sala</h2><p>Cargos, microfone, tela e acesso.</p></div></div>
+      <div class="member-list" id="memberList"></div>
+      <p class="form-error" id="manageRoomError" role="alert"></p>
+    </div>
   </div>
   <div class="modal-backdrop hidden" id="devicesModal">
     <div class="modal devices-modal">
