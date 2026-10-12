@@ -69,11 +69,25 @@ Criar uma base moderna e escalável sem interromper as funcionalidades já valid
 - PWA instalável com cache do shell e chunks para recuperação offline da interface.
 - CTA de instalação no onboarding quando o navegador oferece suporte.
 
-## Próximos investimentos técnicos
+## Etapa 8 concluída — estabilidade em produção
 
-- Testes de navegador contínuos com duas sessões reais para WebRTC, moderação e convites.
-- Telemetria externa opcional e consentida para erros de produção.
-- Domínio próprio e configuração definitiva da tela de consentimento do Google.
+- Recuperação automática da chamada quando o participante que coordenava a conexão sai, com eleição distribuída e espera progressiva.
+- Teste automatizado simula dois participantes concorrendo para recuperar a coordenação.
+- Diagnósticos externos opcionais, limitados e consentidos para erros técnicos de produção.
+- Sanitização remove links, e-mails e identificadores; áudio, vídeo, tela e mensagens nunca são enviados.
+- Armazenamento protegido no Supabase por RLS, com permissão somente para inserir eventos do próprio usuário.
+
+## Etapa 9 entregue no produto — identidade profissional
+
+- Metadados sociais, nome de aplicativo, PWA em português e cache versionado.
+- Política de privacidade atualizada com os controles de diagnóstico.
+- Cabeçalhos adicionais de segurança na hospedagem.
+- Guia de marca e configuração do consentimento Google pronto para aplicação.
+
+## Pendências externas da etapa 9
+
+- Conectar um domínio próprio requer o endereço exato de um domínio controlado pelo responsável do produto.
+- Mostrar “Mostra aí” no consentimento oficial do Google requer aplicar a configuração no projeto Google Cloud e, quando solicitado, concluir a verificação da marca e do domínio.
 
 ## Regra de segurança da migração
 

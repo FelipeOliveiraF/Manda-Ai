@@ -16,14 +16,14 @@ const [auth, preferences, stage, runtime, sounds, pwa, diagnostics, packager] = 
 ]);
 
 for (const marker of ["landing-copy", "landing-features", "landingInstallButton"]) assert.match(auth, new RegExp(marker));
-for (const id of ["soundEnabled", "soundVolume", "installAppButton", "networkStatus"]) assert.match(preferences, new RegExp(`id=["']${id}["']`));
+for (const id of ["soundEnabled", "soundVolume", "installAppButton", "networkStatus", "diagnosticsConsent"]) assert.match(preferences, new RegExp(`id=["']${id}["']`));
 assert.match(stage, /id=["']connectionQuality["']/);
 for (const marker of ["scheduleReconnect", "window.addEventListener('offline'", "window.addEventListener('online'", "navigator.connection"]) assert.match(runtime, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 for (const marker of ["requestDisplayMedia", "screenShareError", "selfBrowserSurface: 'exclude'", "getDisplayMedia({ video: true, audio: true })"]) assert.match(runtime, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 assert.doesNotMatch(runtime, /preferCurrentTab\s*:\s*true/);
 assert.match(sounds, /setEnabled/); assert.match(sounds, /setVolume/);
 assert.match(pwa, /beforeinstallprompt/); assert.match(pwa, /appinstalled/);
-assert.match(diagnostics, /unhandledrejection/); assert.match(diagnostics, /sessionStorage/);
-assert.match(packager, /caches\.open/); assert.match(packager, /shellAssets/);
+assert.match(diagnostics, /unhandledrejection/); assert.match(diagnostics, /sessionStorage/); assert.match(diagnostics, /client_diagnostics/); assert.match(diagnostics, /sentThisSession >= 10/);
+assert.match(packager, /caches\.open/); assert.match(packager, /shellAssets/); assert.match(packager, /mostra-ai-react-v4/); assert.match(packager, /strict-transport-security/);
 
 console.log("PASS: commercial landing, preferences, PWA and call resilience are wired");

@@ -1,4 +1,4 @@
-import { BellRing, Download, Gauge, Headphones, Settings, UserRound } from "lucide-react";
+import { BellRing, Download, Gauge, Headphones, HeartPulse, Settings, UserRound } from "lucide-react";
 import { CloseButton, SettingsHeading } from "./DialogParts";
 
 export function PreferencesDialog() {
@@ -14,6 +14,10 @@ export function PreferencesDialog() {
         </section>
         <section className="preference-card connection-card">
           <span className="preference-icon"><Gauge /></span><div><strong>Conexão</strong><small id="connectionStatusSummary">Pronta para conversar</small></div><span className="status-pill" id="networkStatus">Online</span>
+        </section>
+        <section className="preference-card diagnostics-card">
+          <span className="preference-icon"><HeartPulse /></span><div><strong>Ajude a melhorar</strong><small>Enviar diagnósticos técnicos mínimos. Nunca inclui áudio, vídeo ou mensagens.</small></div>
+          <label className="switch"><input id="diagnosticsConsent" type="checkbox" aria-label="Compartilhar diagnósticos técnicos" /><span /></label>
         </section>
         <button className="preference-action" id="editProfileFromSettings" type="button"><UserRound /><span><strong>Perfil</strong><small>Nome e foto</small></span></button>
         <button className="preference-action" id="openDevicesFromSettings" type="button"><Headphones /><span><strong>Áudio e vídeo</strong><small>Câmera e microfone</small></span></button>

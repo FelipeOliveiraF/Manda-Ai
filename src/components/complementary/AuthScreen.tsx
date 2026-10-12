@@ -14,7 +14,7 @@ export function AuthScreen() {
             <span><MonitorUp /> Tela com áudio</span><span><MessageCircle /> Chats por sala</span><span><ShieldCheck /> Controle de membros</span>
           </div>
           <button className="secondary-button landing-install hidden" id="landingInstallButton" type="button"><Download /> Instalar aplicativo</button>
-          <small className="landing-trust">Grátis para começar • direto no navegador • sem downloads obrigatórios</small>
+          <small className="landing-trust">Privacidade por padrão • mídia não gravada • direto no navegador</small>
         </div>
         <div className="auth-card">
           <div className="auth-emblem"><Headphones aria-hidden="true" /></div>
@@ -28,7 +28,7 @@ export function AuthScreen() {
           <div className="google-slot" id="googleButton" />
           <p className="auth-status" id="authStatus">Entre com o Google para continuar.</p>
           <p className="auth-legal">Ao entrar, você concorda com os <a href="/terms">Termos</a> e a <a href="/privacy">Privacidade</a>.</p>
-          <span className="version-badge">Versão 1.16</span>
+          <span className="version-badge">Versão 1.17</span>
         </div>
       </div>
     </section>

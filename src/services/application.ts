@@ -4,6 +4,8 @@ import { GOOGLE_CLIENT_ID } from "./config";
 import { supabaseClient } from "./supabase";
 import { callSounds } from "./callSounds";
 import { pwaService } from "./pwa";
+import { diagnostics } from "./diagnostics";
+import { coordinatorRecovery } from "./coordinatorRecovery";
 
 export interface ApplicationServices {
   supabase: SupabaseClient;
@@ -12,10 +14,13 @@ export interface ApplicationServices {
   googleClientId: string;
   sounds: typeof callSounds;
   pwa: typeof pwaService;
+  diagnostics: typeof diagnostics;
+  coordinatorRecovery: typeof coordinatorRecovery;
 }
 
 export function createApplicationServices(): ApplicationServices {
   if (!navigator.mediaDevices) throw new Error("Este navegador não oferece suporte aos dispositivos de mídia necessários.");
+  diagnostics.configure(supabaseClient);
   return {
     supabase: supabaseClient,
     Peer,
@@ -23,5 +28,7 @@ export function createApplicationServices(): ApplicationServices {
     googleClientId: GOOGLE_CLIENT_ID,
     sounds: callSounds,
     pwa: pwaService,
+    diagnostics,
+    coordinatorRecovery,
   };
 }

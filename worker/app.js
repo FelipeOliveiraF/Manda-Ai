@@ -55,6 +55,8 @@ export const appScript = String.raw`
   let rosterReady = false;
   let reconnectTimer = null;
   let reconnectAttempts = 0;
+  let coordinatorRecoveryTimer = null;
+  let coordinatorRecovering = false;
 
   function playCallSound(event) { services.sounds.play(event); }
 
@@ -118,6 +120,9 @@ export const appScript = String.raw`
     $('#connectionStatusSummary').textContent = message;
   }
   function clearReconnect() { clearTimeout(reconnectTimer); reconnectTimer = null; reconnectAttempts = 0; }
+  function clearCoordinatorRecovery() {
+    clearTimeout(coordinatorRecoveryTimer); coordinatorRecoveryTimer = null; coordinatorRecovering = false; services.coordinatorRecovery.reset();
+  }
   function scheduleReconnect(targetPeer) {
     if (leaving || !activeRoom || reconnectTimer) return;
     reconnectAttempts += 1; const delay = Math.min(10000, 800 * Math.pow(1.8, reconnectAttempts - 1));
@@ -692,11 +697,11 @@ export const appScript = String.raw`
   function attachPeerHandlers(targetPeer) {
     targetPeer.on('call', handleIncomingCall);
     targetPeer.on('open', function () { clearReconnect(); });
-    targetPeer.on('disconnected', function () { if (!leaving) scheduleReconnect(targetPeer); });
-    targetPeer.on('error', function () { if (!leaving && activeRoom) scheduleReconnect(targetPeer); });
+    targetPeer.on('disconnected', function () { if (!leaving && !coordinatorRecovering) scheduleReconnect(targetPeer); });
+    targetPeer.on('error', function () { if (!leaving && !coordinatorRecovering && activeRoom) scheduleReconnect(targetPeer); });
   }
   function becomeCoordinator(targetPeer) {
-    isCoordinator = true; peer = targetPeer; roster.set(peer.id, roomUserName()); peerUserIds.set(peer.id,currentUser.id); setConnection('Sala conectada', true); broadcastRoster();
+    clearCoordinatorRecovery(); isCoordinator = true; peer = targetPeer; roster.set(peer.id, roomUserName()); peerUserIds.set(peer.id,currentUser.id); setConnection('Sala conectada', true); broadcastRoster();
     peer.on('connection', function (connection) {
       dataConnections.set(connection.peer, connection); if(connection.metadata?.userId) peerUserIds.set(connection.peer,connection.metadata.userId);
       connection.on('open', function () { roster.set(connection.peer, String(connection.metadata && connection.metadata.nickname || 'Amigo').slice(0, 60)); playCallSound('participantJoin'); broadcastRoster(); });
@@ -707,17 +712,45 @@ export const appScript = String.raw`
       connection.on('close', function () { dataConnections.delete(connection.peer); roster.delete(connection.peer); remoteStreams.delete(connection.peer); remoteKinds.delete(connection.peer); if (!leaving) playCallSound('participantLeave'); broadcastRoster(); });
     });
   }
+  function resetPeerTransport() {
+    outgoingCalls.forEach(function (call) { call.close(); }); incomingCalls.forEach(function (call) { call.close(); }); dataConnections.forEach(function (connection) { connection.close(); });
+    coordinatorConnection?.close(); peer?.destroy(); peer = null; coordinatorConnection = null; isCoordinator = false;
+    roster.clear(); rosterReady = false; peerUserIds.clear(); memberProfiles.clear(); dataConnections.clear(); outgoingCalls.clear(); incomingCalls.clear(); remoteStreams.clear(); remoteKinds.clear(); $('#mediaGrid').textContent = ''; updateMediaButtons();
+  }
+  function scheduleCoordinatorRecovery(reason) {
+    if (leaving || !activeRoom || isCoordinator || coordinatorRecoveryTimer) return;
+    services.diagnostics.record('call', reason || 'coordinator-disconnected');
+    const delay = services.coordinatorRecovery.nextDelay();
+    setConnection('O coordenador saiu. Recuperando a chamada…', false);
+    coordinatorRecoveryTimer = setTimeout(beginCoordinatorElection, delay);
+  }
+  function beginCoordinatorElection() {
+    coordinatorRecoveryTimer = null;
+    if (leaving || !activeRoom) return;
+    coordinatorRecovering = true; resetPeerTransport();
+    const candidate = new Peer(coordinatorId, { debug: 1 }); peer = candidate; attachPeerHandlers(candidate);
+    candidate.on('open', function () {
+      coordinatorRecovering = false; services.diagnostics.record('call', 'coordinator-recovered'); becomeCoordinator(candidate); refreshPublishing(); showToast('Chamada recuperada automaticamente.');
+    });
+    candidate.on('error', function (error) {
+      if (leaving || peer !== candidate) return;
+      candidate.destroy(); peer = null; coordinatorRecovering = false;
+      if (error.type === 'unavailable-id') setTimeout(joinCoordinator, 180 + Math.floor(Math.random() * 420));
+      else scheduleCoordinatorRecovery('coordinator-election-' + String(error.type || 'error'));
+    });
+  }
   function joinCoordinator() {
     if (leaving || !activeRoom) return;
     const memberPeer = new Peer({ debug: 1 }); peer = memberPeer; isCoordinator = false; attachPeerHandlers(memberPeer);
     memberPeer.on('open', function () {
       const connection = memberPeer.connect(coordinatorId, { reliable: true, metadata: { nickname: roomUserName(), userId: currentUser.id } }); coordinatorConnection = connection;
       const timeout = setTimeout(function () { if (!connection.open) setConnection('Não consegui encontrar a sala', false); }, 9000);
-      connection.on('open', function () { clearTimeout(timeout); setConnection('Sala conectada', true); connection.send({ type: 'intro', nickname: roomUserName() }); });
+      connection.on('open', function () { clearTimeout(timeout); clearCoordinatorRecovery(); setConnection('Sala conectada', true); connection.send({ type: 'intro', nickname: roomUserName() }); });
       connection.on('data', function (data) { if (data && data.type === 'roster' && Array.isArray(data.items)) applyRoster(data.items); else if (data && data.type === 'gesture') showRoomGesture(data); });
-      connection.on('close', function () { if (!leaving) setConnection('A conexão da sala caiu. Entre novamente.', false); });
+      connection.on('close', function () { if (!leaving && !coordinatorRecovering) scheduleCoordinatorRecovery('coordinator-connection-closed'); });
+      connection.on('error', function () { if (!leaving && !coordinatorRecovering) scheduleCoordinatorRecovery('coordinator-connection-error'); });
     });
-    memberPeer.on('error', function (error) { if (!leaving && error.type === 'peer-unavailable') setConnection('A sala ainda está abrindo. Tente sair e entrar novamente.', false); });
+    memberPeer.on('error', function (error) { if (!leaving && error.type === 'peer-unavailable') scheduleCoordinatorRecovery('coordinator-unavailable'); });
   }
   async function startPeerRoom(room) {
     coordinatorId = await roomPeerId(room);
@@ -735,7 +768,7 @@ export const appScript = String.raw`
     screenTrack = null; cameraTrack = null; microphoneTrack = null; screenAudioTracks = [];
   }
   function cleanupPeer() {
-    leaving = true; clearReconnect(); stopMedia();
+    leaving = true; clearReconnect(); clearCoordinatorRecovery(); stopMedia();
     Array.from(speakingMonitors.keys()).forEach(stopSpeakingMonitor); if (speakingContext) speakingContext.close().catch(function () {}); speakingContext = null;
     outgoingCalls.forEach(function (call) { call.close(); }); incomingCalls.forEach(function (call) { call.close(); }); dataConnections.forEach(function (connection) { connection.close(); });
     coordinatorConnection?.close(); peer?.destroy(); peer = null; coordinatorConnection = null; isCoordinator = false;
@@ -918,6 +951,7 @@ export const appScript = String.raw`
     $('#soundEnabled').checked = services.sounds.isEnabled;
     $('#soundVolume').value = String(Math.round(services.sounds.level * 100));
     $('#soundVolume').disabled = !services.sounds.isEnabled;
+    $('#diagnosticsConsent').checked = services.diagnostics.consentEnabled;
     const installed = services.pwa.installed, available = services.pwa.canInstall;
     $('#installAppButton').disabled = installed || !available;
     $('#installAppStatus').textContent = installed ? 'Já instalado neste dispositivo' : available ? 'Usar como aplicativo no computador' : 'Disponível pelo menu do navegador';
@@ -1282,6 +1316,7 @@ export const appScript = String.raw`
   $('#openDevicesFromSettings').addEventListener('click',function(){closeModal('preferencesModal');openDevices();});
   $('#soundEnabled').addEventListener('change',function(){services.sounds.setEnabled($('#soundEnabled').checked);syncPreferences();if($('#soundEnabled').checked)playCallSound('mediaOn');});
   $('#soundVolume').addEventListener('input',function(){services.sounds.setVolume(Number($('#soundVolume').value)/100);});
+  $('#diagnosticsConsent').addEventListener('change',function(){services.diagnostics.setConsent($('#diagnosticsConsent').checked);showToast($('#diagnosticsConsent').checked?'Diagnósticos técnicos ativados.':'Diagnósticos técnicos desativados.');syncPreferences();});
   $('#installAppButton').addEventListener('click',installApplication);$('#landingInstallButton').addEventListener('click',installApplication);
   services.pwa.subscribe(syncPreferences);
   $('#roomSettingsButton').addEventListener('click',editRoom);

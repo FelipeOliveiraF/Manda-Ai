@@ -23,7 +23,7 @@ export function Sidebar() {
       <div className="rooms-list" id="roomsList" />
       <button className="new-room-button" id="newRoomWide"><Plus /> Criar nova sala</button>
       <button className="device-sidebar" id="sidebarDevices"><Headphones /> Áudio e vídeo</button>
-      <div className="sidebar-version"><span className="version-dot" aria-hidden="true" />Versão 1.16</div>
+      <div className="sidebar-version"><span className="version-dot" aria-hidden="true" />Versão 1.17</div>
       <div className="account-card">
         <button className="account-avatar" id="accountAvatar" title="Editar perfil" aria-label="Editar perfil">A</button>
         <div className="account-copy"><strong id="accountName">Amigo</strong><small>Disponível</small></div>
