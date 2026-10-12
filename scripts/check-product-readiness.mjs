@@ -19,6 +19,8 @@ for (const marker of ["landing-copy", "landing-features", "landingInstallButton"
 for (const id of ["soundEnabled", "soundVolume", "installAppButton", "networkStatus"]) assert.match(preferences, new RegExp(`id=["']${id}["']`));
 assert.match(stage, /id=["']connectionQuality["']/);
 for (const marker of ["scheduleReconnect", "window.addEventListener('offline'", "window.addEventListener('online'", "navigator.connection"]) assert.match(runtime, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+for (const marker of ["requestDisplayMedia", "screenShareError", "selfBrowserSurface: 'exclude'", "getDisplayMedia({ video: true, audio: true })"]) assert.match(runtime, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+assert.doesNotMatch(runtime, /preferCurrentTab\s*:\s*true/);
 assert.match(sounds, /setEnabled/); assert.match(sounds, /setVolume/);
 assert.match(pwa, /beforeinstallprompt/); assert.match(pwa, /appinstalled/);
 assert.match(diagnostics, /unhandledrejection/); assert.match(diagnostics, /sessionStorage/);

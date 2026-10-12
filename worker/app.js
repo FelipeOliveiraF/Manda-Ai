@@ -785,20 +785,35 @@ export const appScript = String.raw`
     try { if(cameraTrack){cameraTrack.stop();cameraTrack=null;refreshPublishing();playCallSound('mediaOff');}else{await replaceCamera();playCallSound('mediaOn');} }
     catch(error){showToast(mediaError(error));}finally{$('#cameraButton').disabled=false;}
   }
+  function screenShareError(error) {
+    if (error?.name === 'NotAllowedError') return 'O seletor foi fechado ou o navegador bloqueou o compartilhamento. Tente novamente e escolha uma aba, janela ou tela.';
+    if (error?.name === 'NotReadableError') return 'O navegador não conseguiu capturar essa tela. Feche outro compartilhamento ativo e tente novamente.';
+    if (error?.name === 'InvalidStateError') return 'Abra o Mostra aí na janela ativa e tente compartilhar novamente.';
+    if (error?.name === 'TypeError' || error?.name === 'OverconstrainedError') return 'Este navegador não aceitou as opções de captura. Atualize o navegador ou tente compartilhar sem áudio.';
+    return 'Não foi possível iniciar o compartilhamento de tela. Tente novamente.';
+  }
+  async function requestDisplayMedia() {
+    try {
+      return await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 30, max: 60 }, displaySurface: 'browser' },
+        audio: { suppressLocalAudioPlayback: false },
+        selfBrowserSurface: 'exclude',
+        surfaceSwitching: 'include',
+        systemAudio: 'exclude'
+      });
+    } catch (error) {
+      if (error?.name !== 'TypeError' && error?.name !== 'OverconstrainedError') throw error;
+      return navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    }
+  }
   async function toggleScreen() {
+    if (!activeRoom) return;
     if (activeMembership && !activeMembership.can_share_screen) { showToast('O compartilhamento de tela está bloqueado pela administração.'); return; }
+    $('#screenButton').disabled = true;
     try {
       if (screenTrack) { const oldVideo = screenTrack; const oldAudio = screenAudioTracks.slice(); screenTrack = null; screenAudioTracks = []; oldVideo.stop(); oldAudio.forEach(function (track) { track.stop(); }); playCallSound('shareStop'); }
       else {
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: { frameRate: { ideal: 30, max: 60 }, displaySurface: 'browser' },
-          audio: { suppressLocalAudioPlayback: false },
-          preferCurrentTab: true,
-          selfBrowserSurface: 'exclude',
-          surfaceSwitching: 'include',
-          systemAudio: 'exclude',
-          windowAudio: 'exclude'
-        });
+        const stream = await requestDisplayMedia();
         screenTrack = stream.getVideoTracks()[0];
         playCallSound('shareStart');
         const displaySurface = screenTrack?.getSettings?.().displaySurface;
@@ -814,7 +829,13 @@ export const appScript = String.raw`
         screenTrack.addEventListener('ended', function () { screenTrack = null; screenAudioTracks.forEach(function (track) { track.stop(); }); screenAudioTracks = []; if (!leaving) { playCallSound('shareStop'); refreshPublishing(); } });
       }
       refreshPublishing();
-    } catch (_) { showToast('O compartilhamento foi cancelado.'); }
+    } catch (error) {
+      console.warn('Falha ao iniciar compartilhamento de tela:', error?.name || error);
+      showToast(screenShareError(error));
+    } finally {
+      $('#screenButton').disabled = false;
+      if (activeMembership) applyMembershipControls();
+    }
   }
 
   function updatePrejoinPreview() {
