@@ -56,6 +56,9 @@ export const appScript = String.raw`
   function initials(name) {
     return String(name || 'Amigo').trim().split(/\s+/).slice(0, 2).map(function (part) { return part[0] || ''; }).join('').toUpperCase() || '?';
   }
+  function avatarTone(name) {
+    return Array.from(String(name || 'Amigo')).reduce(function (total, character) { return ((total * 31) + character.codePointAt(0)) >>> 0; }, 7) % 6;
+  }
   function userName() {
     const meta = currentUser && currentUser.user_metadata || {};
     return String(ownProfile?.display_name || meta.full_name || meta.name || (currentUser && currentUser.email || '').split('@')[0] || 'Amigo').slice(0, 60);
@@ -90,6 +93,7 @@ export const appScript = String.raw`
   function setAvatar(element, name, url) {
     element.textContent = initials(name);
     element.style.backgroundImage = '';
+    element.dataset.avatarTone = String(avatarTone(name));
     element.dataset.photo = url || '';
     if (!url) return;
     resolvePhoto(url).then(function (resolved) {
@@ -100,7 +104,7 @@ export const appScript = String.raw`
   }
   function setConnection(message, healthy) {
     $('#connectionNote span').textContent = message;
-    $('#connectionNote i').style.background = healthy ? 'var(--lime)' : '#edb85b';
+    $('#connectionNote i').style.background = healthy ? 'var(--color-speaking)' : 'var(--color-warning)';
   }
 
   async function randomNonce() {
