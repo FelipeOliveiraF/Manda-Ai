@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {page} from '../worker/page.js';
 import {appScript} from '../worker/app.js';
 import app from '../worker/index.js';
+assert.match(page,/Versão 1\.13/);
 new Function(appScript);
 const ids=[...page.matchAll(/id="([^"]+)"/g)].map(m=>m[1]);
 assert.equal(ids.length,new Set(ids).size,'HTML IDs must be unique');

@@ -1,3 +1,5 @@
+const APP_VERSION = '1.13';
+
 export const page = `<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -24,6 +26,7 @@ export const page = `<!doctype html>
       <div class="google-slot" id="googleButton"></div>
       <p class="auth-status" id="authStatus">Entre com o Google para continuar.</p>
       <p class="auth-legal">Ao entrar, você concorda com os <a href="/terms">Termos</a> e a <a href="/privacy">Privacidade</a>.</p>
+      <span class="version-badge">Versão ${APP_VERSION}</span>
     </div>
   </section>
 
@@ -36,6 +39,7 @@ export const page = `<!doctype html>
       <div class="sidebar-intro"><h2>Seu espaço</h2><p>Encontre sua galera por aqui.</p></div><label class="room-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input id="roomSearch" placeholder="Buscar sala" aria-label="Buscar sala"></label><div class="rooms-heading"><span>SUAS SALAS</span><button id="newRoom" title="Criar sala" aria-label="Criar sala"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
       <div class="rooms-list" id="roomsList"></div>
       <button class="new-room-button" id="newRoomWide"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Criar nova sala</button><button class="device-sidebar" id="sidebarDevices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14v-3a9 9 0 0118 0v3"/><rect x="3" y="12" width="4" height="9" rx="2"/><rect x="17" y="12" width="4" height="9" rx="2"/></svg> Áudio e vídeo</button>
+      <div class="sidebar-version"><span class="version-dot" aria-hidden="true"></span>Versão ${APP_VERSION}</div>
       <div class="account-card">
         <button class="account-avatar" id="accountAvatar" title="Editar perfil" aria-label="Editar perfil">A</button>
         <div class="account-copy"><strong id="accountName">Amigo</strong><small>Disponível</small></div>
