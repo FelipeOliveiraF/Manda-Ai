@@ -1,4 +1,5 @@
 import { ArrowRight, Camera, ChevronUp, Clock3, Link2, Mic, PhoneOff, Radio, ScreenShare } from "lucide-react";
+import mostraAiMascot from "../../assets/mostra-ai-mascot.png";
 
 function MediaControls() {
   return (
@@ -34,7 +35,10 @@ export function Stage() {
             <h2 id="homeGreeting">Que bom te ver por aqui.</h2>
             <p id="homeRoomSummary">Suas salas e convites ficam reunidos em um só lugar.</p>
           </div>
-          <div className="home-welcome-mark" aria-hidden="true">M</div>
+          <figure className="home-mascot" aria-label="Mascote do Mostra aí dando boas-vindas">
+            <span className="home-mascot-message" aria-hidden="true">Bora mostrar?</span>
+            <img src={mostraAiMascot} alt="" draggable="false" />
+          </figure>
         </section>
 
         <div className="home-grid">
