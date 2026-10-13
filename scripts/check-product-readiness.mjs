@@ -35,7 +35,9 @@ assert.match(diagnostics, /unhandledrejection/); assert.match(diagnostics, /sess
 for (const marker of ["MostraAiMark", "MostraAiChatIcon", "MostraAiRoomIcon"]) assert.match(brandIcons, new RegExp(marker));
 assert.match(brandAsset, /aria-label="Mostra aí"/); assert.match(brandAsset, /mostra-ai-gradient/);
 for (const marker of ["mostra-theme", "purple", "dark", "light", "colorScheme"]) assert.match(theme, new RegExp(marker));
+for (const marker of ["saveThemePreference", "mostra:theme-change"]) assert.match(theme, new RegExp(marker));
 for (const marker of ["THEME_IDS", "data-theme-choice", "setTheme", "currentTheme"]) assert.match(runtime, new RegExp(marker));
+for (const marker of ["user_preferences", "mostra:theme-change", "preferenceResult.data?.theme"]) assert.match(runtime, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 assert.match(packager, /brand\/mostra-ai-mark\.svg/); assert.match(packager, /caches\.open/); assert.match(packager, /shellAssets/); assert.match(packager, /mostra-ai-react-v6/); assert.match(packager, /strict-transport-security/);
 
 console.log("PASS: commercial landing, preferences, PWA and call resilience are wired");

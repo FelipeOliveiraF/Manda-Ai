@@ -1077,8 +1077,17 @@ export const appScript = String.raw`
 
   async function bootSignedIn(user) {
     currentUser = user;
-    const profileResult = await db.from('profiles').select('display_name,avatar_url').eq('id',user.id).single();
+    const results = await Promise.all([
+      db.from('profiles').select('display_name,avatar_url').eq('id',user.id).single(),
+      db.from('user_preferences').select('theme').eq('id',user.id).maybeSingle()
+    ]);
+    const profileResult = results[0], preferenceResult = results[1];
     ownProfile = profileResult.data || null;
+    if (preferenceResult.data?.theme && THEME_IDS.includes(preferenceResult.data.theme)) {
+      setTheme(preferenceResult.data.theme, false);
+    } else if (!preferenceResult.error) {
+      await db.from('user_preferences').upsert({ id: user.id, theme: currentTheme(), updated_at: new Date().toISOString() });
+    }
     $('#authScreen').classList.add('hidden'); $('#app').classList.remove('hidden'); renderAccount(); await loadRooms();
     if (pendingInvite) await loadInvitePreview();
   }
@@ -1094,6 +1103,12 @@ export const appScript = String.raw`
   }
 
   $('#createForm').addEventListener('submit', createRoom);
+  window.addEventListener('mostra:theme-change', async function (event) {
+    const theme = event.detail?.theme;
+    if (!currentUser || !THEME_IDS.includes(theme)) return;
+    const result = await db.from('user_preferences').upsert({ id: currentUser.id, theme: theme, updated_at: new Date().toISOString() });
+    if (result.error) console.warn('Não foi possível sincronizar o tema.', result.error);
+  });
   $('#homeJoinForm').addEventListener('submit', handleHomeJoin);
   $('#messageForm').addEventListener('submit', sendMessage);
   $('#channelForm').addEventListener('submit', createChannel);

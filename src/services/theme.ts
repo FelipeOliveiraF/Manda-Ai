@@ -19,3 +19,7 @@ export function applyTheme(theme: ThemeId) {
 export function initializeTheme() {
   applyTheme(getSavedTheme());
 }
+
+export function saveThemePreference(theme: ThemeId) {
+  window.dispatchEvent(new CustomEvent("mostra:theme-change", { detail: { theme } }));
+}

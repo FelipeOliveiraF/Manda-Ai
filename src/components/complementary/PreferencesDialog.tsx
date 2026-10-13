@@ -1,6 +1,6 @@
 import { BellRing, Download, Gauge, Headphones, HeartPulse, Settings, UserRound } from "lucide-react";
 import { useState } from "react";
-import { applyTheme, getSavedTheme, type ThemeId } from "../../services/theme";
+import { applyTheme, getSavedTheme, saveThemePreference, type ThemeId } from "../../services/theme";
 import { CloseButton, SettingsHeading } from "./DialogParts";
 
 export function PreferencesDialog() {
@@ -8,6 +8,7 @@ export function PreferencesDialog() {
   const chooseTheme = (nextTheme: ThemeId) => {
     applyTheme(nextTheme);
     setTheme(nextTheme);
+    saveThemePreference(nextTheme);
   };
 
   return <div className="modal-backdrop hidden" id="preferencesModal" data-component="preferences-dialog">
