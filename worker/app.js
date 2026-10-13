@@ -142,6 +142,15 @@ export const appScript = String.raw`
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
     return Array.from(new Uint8Array(digest)).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
   }
+  function setAuthStatus(message, canRetry) {
+    $('#authStatusMessage').textContent = message;
+    $('#retryStartup').classList.toggle('hidden', !canRetry);
+  }
+  function authError(error) {
+    if (!navigator.onLine) return 'Você está sem internet. Reconecte-se e tente entrar novamente.';
+    if (/network|fetch|timeout/i.test(error?.message || '')) return 'Não conseguimos falar com o serviço de login. Confira sua conexão e tente novamente.';
+    return 'Não foi possível concluir o login. Tente novamente em alguns instantes.';
+  }
   async function initGoogleButton() {
     if (googleInitialized) return;
     googleInitialized = true;
@@ -152,7 +161,7 @@ export const appScript = String.raw`
     }
     if (!(window.google && google.accounts && google.accounts.id)) {
       googleInitialized = false;
-      $('#authStatus').textContent = 'O login do Google não carregou. Atualize a página.';
+      setAuthStatus('O login do Google não carregou. Confira se o navegador bloqueou scripts e tente novamente.', true);
       return;
     }
     const nonce = await randomNonce();
@@ -161,9 +170,9 @@ export const appScript = String.raw`
       client_id: GOOGLE_CLIENT_ID,
       nonce: hashedNonce,
       callback: async function (response) {
-        $('#authStatus').textContent = 'Entrando no Mostra aí…';
+        setAuthStatus('Entrando no Mostra aí…', false);
         const result = await db.auth.signInWithIdToken({ provider: 'google', token: response.credential, nonce: nonce });
-        if (result.error) $('#authStatus').textContent = 'Não foi possível entrar: ' + result.error.message;
+        if (result.error) setAuthStatus(authError(result.error), true);
       }
     });
     const slot = $('#googleButton');
@@ -176,7 +185,7 @@ export const appScript = String.raw`
     const result = await db.rpc('get_room_invite_preview', { p_token: pendingInvite });
     const preview = Array.isArray(result.data) ? result.data[0] : result.data;
     if (result.error || !preview) {
-      $('#authStatus').textContent = 'Este convite não existe mais ou foi revogado.';
+      setAuthStatus('Este convite não existe mais ou foi revogado.', false);
       pendingInvite = '';
       history.replaceState(null, '', location.pathname);
       return;
@@ -783,12 +792,16 @@ export const appScript = String.raw`
   }
   function microphoneConstraints() { return Object.assign({echoCancellation:true,noiseSuppression:true}, micDevice ? {deviceId:{exact:micDevice}} : {}); }
   function cameraConstraints() { return Object.assign({width:{ideal:1280},height:{ideal:720}}, cameraDevice ? {deviceId:{exact:cameraDevice}} : {}); }
-  function mediaError(error) {
-    if(error.name === 'NotAllowedError') return 'Acesso bloqueado. Permita câmera ou microfone nas configurações deste site no navegador.';
-    if(error.name === 'NotFoundError') return 'Nenhum dispositivo encontrado. Confira se está conectado.';
-    if(error.name === 'OverconstrainedError') return 'O dispositivo salvo não está disponível. Escolha outro em Áudio e vídeo.';
-    if(error.name === 'NotReadableError') return 'O dispositivo está ocupado ou não pode ser acessado. Feche outros aplicativos e tente novamente.';
-    return 'Não foi possível acessar o dispositivo. Tente novamente.';
+  function mediaError(error, kind) {
+    const label = kind === 'mic' ? 'microfone' : kind === 'camera' ? 'câmera' : 'dispositivo';
+    if (!navigator.onLine) return 'Você está sem internet. A câmera e o microfone são locais, mas a chamada só será retomada quando a conexão voltar.';
+    if(error?.name === 'NotAllowedError' || error?.name === 'SecurityError') return 'O acesso ao ' + label + ' está bloqueado. Clique no cadeado da barra de endereço, permita o acesso e tente novamente.';
+    if(error?.name === 'NotFoundError') return kind === 'mic' ? 'Nenhum microfone foi encontrado. Conecte um microfone ou escolha outro em Áudio e vídeo.' : kind === 'camera' ? 'Nenhuma câmera foi encontrada. Conecte uma câmera ou escolha outra em Áudio e vídeo.' : 'Nenhum dispositivo compatível foi encontrado.';
+    if(error?.name === 'OverconstrainedError') return 'O ' + label + ' salvo não está disponível. Escolha outro em Áudio e vídeo.';
+    if(error?.name === 'NotReadableError' || error?.name === 'TrackStartError') return 'O ' + label + ' está sendo usado por outro aplicativo. Feche o outro aplicativo e tente novamente.';
+    if(error?.name === 'AbortError') return 'O acesso ao ' + label + ' foi interrompido antes de começar. Tente novamente.';
+    if(error?.name === 'TypeError') return 'Este navegador não conseguiu abrir o ' + label + '. Atualize o navegador ou tente no Chrome ou Edge.';
+    return 'Não foi possível acessar o ' + label + '. Verifique o dispositivo e tente novamente.';
   }
   async function replaceMicrophone() {
     if (activeMembership?.is_muted) throw new Error('moderated');
@@ -810,16 +823,19 @@ export const appScript = String.raw`
     if (activeMembership?.is_muted) { showToast('Seu microfone está bloqueado pela administração.'); return; }
     $('#micButton').disabled=true;
     try { if (microphoneTrack) { microphoneTrack.stop(); microphoneTrack=null; refreshPublishing(); playCallSound('mediaOff'); } else { await replaceMicrophone(); playCallSound('mediaOn'); } }
-    catch(error){showToast(error.message === 'moderated' ? 'Seu microfone está bloqueado pela administração.' : mediaError(error));} finally{$('#micButton').disabled=false;applyMembershipControls();}
+    catch(error){showToast(error.message === 'moderated' ? 'Seu microfone está bloqueado pela administração.' : mediaError(error, 'mic'));} finally{$('#micButton').disabled=false;applyMembershipControls();}
   }
   async function toggleCamera() {
     if (!activeRoom) return;
     $('#cameraButton').disabled=true;
     try { if(cameraTrack){cameraTrack.stop();cameraTrack=null;refreshPublishing();playCallSound('mediaOff');}else{await replaceCamera();playCallSound('mediaOn');} }
-    catch(error){showToast(mediaError(error));}finally{$('#cameraButton').disabled=false;}
+    catch(error){showToast(mediaError(error, 'camera'));}finally{$('#cameraButton').disabled=false;}
   }
   function screenShareError(error) {
-    if (error?.name === 'NotAllowedError') return 'O seletor foi fechado ou o navegador bloqueou o compartilhamento. Tente novamente e escolha uma aba, janela ou tela.';
+    if (!navigator.onLine) return 'Você está sem internet. Reconecte-se antes de compartilhar a tela.';
+    if (error?.name === 'NotAllowedError') return 'Compartilhamento cancelado ou bloqueado pelo navegador. Tente novamente e confirme uma aba, janela ou tela no seletor.';
+    if (error?.name === 'AbortError') return 'O compartilhamento foi interrompido antes de começar. Tente novamente.';
+    if (error?.name === 'NotFoundError') return 'Nenhuma tela disponível foi encontrada para compartilhar.';
     if (error?.name === 'NotReadableError') return 'O navegador não conseguiu capturar essa tela. Feche outro compartilhamento ativo e tente novamente.';
     if (error?.name === 'InvalidStateError') return 'Abra o Mostra aí na janela ativa e tente compartilhar novamente.';
     if (error?.name === 'TypeError' || error?.name === 'OverconstrainedError') return 'Este navegador não aceitou as opções de captura. Atualize o navegador ou tente compartilhar sem áudio.';
@@ -898,7 +914,7 @@ export const appScript = String.raw`
       prejoinStream = prejoinStream || new MediaStream(); acquired.getTracks().forEach(function (track) { prejoinStream.addTrack(track); });
       if (isMic) { micDevice = device; localStorage.setItem('mostra-microphone', device); } else { cameraDevice = device; localStorage.setItem('mostra-camera', device); }
       await populatePrejoinDevices(); updatePrejoinPreview();
-    } catch (error) { $('#prejoinError').textContent = mediaError(error); }
+    } catch (error) { $('#prejoinError').textContent = mediaError(error, isMic ? 'mic' : 'camera'); }
   }
   async function openRoom(room) {
     if (activeRoom && activeRoom.id === room.id) { $('#sidebar').classList.remove('open'); return; }
@@ -1287,7 +1303,7 @@ export const appScript = String.raw`
       const data=new Uint8Array(analyser.fftSize);
       function measure(){if(!previewMic)return;analyser.getByteTimeDomainData(data);let sum=0;for(const v of data)sum+=Math.pow((v-128)/128,2);$('#micLevel').value=Math.min(100,Math.sqrt(sum/data.length)*350);meterFrame=requestAnimationFrame(measure);}
       measure();$('#deviceHint').textContent='Teste local: seu microfone não está sendo transmitido por este teste.';
-    }catch(err){stopMicPreview();$('#deviceHint').textContent=mediaError(err);}finally{$('#testMic').disabled=false;}
+    }catch(err){stopMicPreview();$('#deviceHint').textContent=mediaError(err,'mic');}finally{$('#testMic').disabled=false;}
   }
   async function testCamera() {
     if(previewCamera){stopCameraPreview();return;}
@@ -1297,7 +1313,7 @@ export const appScript = String.raw`
       if(generation!==previewGeneration){stream.getTracks().forEach(t=>t.stop());return;}
       previewCamera=stream;$('#cameraPreview').srcObject=stream;$('#cameraPreviewHint').classList.add('hidden');$('#testCamera').textContent='Parar prévia';
       await enumerateDevices();$('#deviceHint').textContent='Esta prévia fica só com você. Fechar esta janela encerra o teste.';
-    }catch(err){$('#deviceHint').textContent=mediaError(err);}finally{$('#testCamera').disabled=false;}
+    }catch(err){$('#deviceHint').textContent=mediaError(err,'camera');}finally{$('#testCamera').disabled=false;}
   }
   async function changeDevice(kind) {
     const isMic=kind==='mic',select=$('#'+(isMic?'microphoneSelect':'cameraSelect')),old=isMic?micDevice:cameraDevice;
@@ -1308,7 +1324,7 @@ export const appScript = String.raw`
       if(isMic&&previewMic){stopMicPreview();await testMicrophone();}else if(!isMic&&previewCamera){stopCameraPreview();await testCamera();}
       localStorage.setItem(isMic?'mostra-microphone':'mostra-camera',select.value);
       $('#deviceHint').textContent='Dispositivo escolhido. A preferência fica salva neste navegador.';
-    }catch(err){if(isMic)micDevice=old;else cameraDevice=old;select.value=old;$('#deviceHint').textContent=mediaError(err);}finally{select.disabled=false;}
+    }catch(err){if(isMic)micDevice=old;else cameraDevice=old;select.value=old;$('#deviceHint').textContent=mediaError(err,isMic?'mic':'camera');}finally{select.disabled=false;}
   }
   function openDevices(focus) {openModal('devicesModal');enumerateDevices();if(focus)$('#'+focus).focus();}
   $('#profileButton').addEventListener('click',function(){syncPreferences();openModal('preferencesModal');});$('#accountAvatar').addEventListener('click',editProfile);
@@ -1331,8 +1347,8 @@ export const appScript = String.raw`
   $('#testMic').addEventListener('click',testMicrophone);$('#testCamera').addEventListener('click',testCamera);
   $('#microphoneSelect').addEventListener('change',()=>changeDevice('mic'));$('#cameraSelect').addEventListener('change',()=>changeDevice('camera'));
   navigator.mediaDevices?.addEventListener('devicechange',()=>{if(!$('#devicesModal').classList.contains('hidden'))enumerateDevices();});
-  window.addEventListener('offline',function(){if(activeRoom)setConnection('Sem internet. A chamada será retomada automaticamente.',false);else syncPreferences();});
-  window.addEventListener('online',function(){if(activeRoom){setConnection('Internet voltou. Reconectando…',false);scheduleReconnect(peer);}else syncPreferences();});
+  window.addEventListener('offline',function(){showToast('Você ficou sem internet. Suas ações serão retomadas quando a conexão voltar.');if(activeRoom)setConnection('Sem internet. A chamada será retomada automaticamente.',false);else syncPreferences();});
+  window.addEventListener('online',function(){showToast(activeRoom?'Internet voltou. Reconectando a chamada…':'Internet voltou. Você já pode continuar.');if(activeRoom){setConnection('Internet voltou. Reconectando…',false);scheduleReconnect(peer);}else syncPreferences();});
   navigator.connection?.addEventListener?.('change',function(){if(activeRoom)setConnection($('#connectionNote span').textContent,$('#connectionNote').dataset.state==='healthy');else syncPreferences();});
   document.addEventListener('keydown',event=>{
     const modal=Array.from(document.querySelectorAll('.modal-backdrop')).find(m=>!m.classList.contains('hidden'));if(!modal)return;

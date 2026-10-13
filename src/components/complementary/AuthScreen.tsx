@@ -26,7 +26,10 @@ export function AuthScreen() {
             <div><small>Você foi convidado para</small><strong id="loginInviteName">uma sala</strong></div>
           </div>
           <div className="google-slot" id="googleButton" />
-          <p className="auth-status" id="authStatus">Entre com o Google para continuar.</p>
+          <div className="auth-status" id="authStatus" role="status" aria-live="polite">
+            <span id="authStatusMessage">Entre com o Google para continuar.</span>
+            <button className="text-button hidden" id="retryStartup" type="button" onClick={() => location.reload()}>Tentar novamente</button>
+          </div>
           <p className="auth-legal">Ao entrar, você concorda com os <a href="/terms">Termos</a> e a <a href="/privacy">Privacidade</a>.</p>
           <span className="version-badge">Versão 1.17</span>
         </div>

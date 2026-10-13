@@ -307,6 +307,22 @@ body,
   letter-spacing: -.04em;
 }
 
+[data-component="auth-screen"] .auth-status {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+[data-component="auth-screen"] .auth-status .text-button {
+  color: #c9a9ff;
+  padding: 6px 10px;
+  font-weight: 750;
+}
+
 [data-component="auth-screen"] .auth-emblem {
   background: linear-gradient(145deg, #7c4ee4, #4b287e);
   border: 1px solid #ffffff17;
