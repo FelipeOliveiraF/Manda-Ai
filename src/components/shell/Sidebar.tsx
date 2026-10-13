@@ -1,4 +1,4 @@
-import { Headphones, LogOut, Plus, Search, Settings, X } from "lucide-react";
+import { Headphones, House, LogOut, Plus, Search, Settings, X } from "lucide-react";
 import { Brand } from "./Brand";
 
 export function Sidebar() {
@@ -16,6 +16,10 @@ export function Sidebar() {
         <Search aria-hidden="true" />
         <input id="roomSearch" placeholder="Buscar sala" aria-label="Buscar sala" />
       </label>
+      <button className="home-nav-item active" id="homeButton" type="button">
+        <span className="home-nav-icon"><House /></span>
+        <span><strong>Início</strong><small>Visão geral</small></span>
+      </button>
       <div className="rooms-heading">
         <span>SUAS SALAS</span>
         <button id="newRoom" title="Criar sala" aria-label="Criar sala"><Plus /></button>

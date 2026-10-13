@@ -8,6 +8,7 @@ export const appScript = String.raw`
   const $ = function (selector) { return document.querySelector(selector); };
   const THEME_KEY = 'mostra-theme';
   const THEME_IDS = ['purple','dark','light'];
+  const RECENT_ROOMS_KEY = 'mostra-recent-rooms';
 
   function currentTheme() {
     const saved = localStorage.getItem(THEME_KEY);
@@ -221,6 +222,46 @@ export const appScript = String.raw`
     const name = userName();
     $('#accountName').textContent = name;
     setAvatar($('#accountAvatar'), name, avatarUrl());
+    const firstName = name.trim().split(/\s+/)[0] || 'Amigo';
+    $('#homeGreeting').textContent = 'Olá, ' + firstName + '. Que bom te ver.';
+  }
+  function recentRoomIds() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(RECENT_ROOMS_KEY) || '[]');
+      return Array.isArray(stored) ? stored.filter(function (id) { return typeof id === 'string'; }) : [];
+    } catch (_) { return []; }
+  }
+  function rememberRoom(roomId) {
+    const ids = [roomId].concat(recentRoomIds().filter(function (id) { return id !== roomId; })).slice(0, 8);
+    localStorage.setItem(RECENT_ROOMS_KEY, JSON.stringify(ids));
+  }
+  function renderHome() {
+    const target = $('#homeRecentRooms');
+    if (!target) return;
+    const savedOrder = recentRoomIds();
+    const recent = savedOrder.map(function (id) { return rooms.find(function (room) { return room.id === id; }); }).filter(Boolean);
+    rooms.forEach(function (room) { if (!recent.some(function (saved) { return saved.id === room.id; })) recent.push(room); });
+    target.textContent = '';
+    recent.slice(0, 4).forEach(function (room) {
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'recent-room-card';
+      const avatar = document.createElement('span'); avatar.className = 'recent-room-avatar'; setAvatar(avatar, room.name, room.avatar_url);
+      const copy = document.createElement('span'); copy.className = 'recent-room-copy';
+      const title = document.createElement('strong'); title.textContent = room.name;
+      const detail = document.createElement('small'); detail.textContent = 'Sala ' + room.code;
+      const arrow = document.createElement('span'); arrow.className = 'recent-room-arrow'; arrow.textContent = '›'; arrow.setAttribute('aria-hidden', 'true');
+      copy.append(title, detail); button.append(avatar, copy, arrow);
+      button.addEventListener('click', function () { openRoom(room); }); target.appendChild(button);
+    });
+    if (!recent.length) {
+      const empty = document.createElement('div'); empty.className = 'home-recent-empty';
+      empty.textContent = 'Você ainda não tem salas. Quando criar ou aceitar um convite, elas aparecem aqui.';
+      target.appendChild(empty);
+    }
+    $('#emptyCreate').classList.toggle('hidden', Boolean(rooms.length));
+    $('#homeRoomSummary').textContent = rooms.length
+      ? 'Você tem ' + rooms.length + (rooms.length === 1 ? ' sala salva. Entre de novo com um clique.' : ' salas salvas. Entre de novo com um clique.')
+      : 'Seus convites e as salas que você criar vão aparecer aqui.';
+    $('#homeButton').classList.toggle('active', !activeRoom);
   }
   function renderRooms() {
     const list = $('#roomsList');
@@ -230,6 +271,7 @@ export const appScript = String.raw`
       empty.className = 'rooms-empty';
       empty.textContent = 'Nenhuma sala ainda. Crie a primeira e convide seus amigos.';
       list.appendChild(empty);
+      renderHome();
       return;
     }
     rooms.filter(function(room) { return room.name.toLocaleLowerCase('pt-BR').includes($('#roomSearch').value.trim().toLocaleLowerCase('pt-BR')); }).forEach(function (room) {
@@ -245,6 +287,32 @@ export const appScript = String.raw`
       button.addEventListener('click', function () { openRoom(room); });
       list.appendChild(button);
     });
+    renderHome();
+  }
+
+  async function handleHomeJoin(event) {
+    event.preventDefault();
+    const input = $('#homeJoinInput'), status = $('#homeJoinStatus'), raw = input.value.trim();
+    status.classList.remove('error'); status.textContent = '';
+    if (!raw) { status.classList.add('error'); status.textContent = 'Cole um convite, código ou ID para continuar.'; input.focus(); return; }
+    const ownRoom = rooms.find(function (room) { return room.code.toLocaleLowerCase('pt-BR') === raw.toLocaleLowerCase('pt-BR') || room.id === raw; });
+    if (ownRoom) { input.value = ''; await openRoom(ownRoom); return; }
+    let token = '';
+    try {
+      const parsed = new URL(raw, location.origin);
+      token = parsed.searchParams.get('invite') || '';
+    } catch (_) {}
+    if (!token && /^[a-f0-9]{32,}$/i.test(raw)) token = raw;
+    if (!token) {
+      status.classList.add('error'); status.textContent = 'Essa sala não está salva na sua conta. Peça um link de convite para entrar.'; return;
+    }
+    const button = $('#homeJoinButton'); button.disabled = true; status.textContent = 'Verificando convite…';
+    const result = await db.rpc('get_room_invite_preview', { p_token: token });
+    button.disabled = false;
+    const preview = Array.isArray(result.data) ? result.data[0] : result.data;
+    if (result.error || !preview) { status.classList.add('error'); status.textContent = 'Este convite expirou, foi revogado ou não existe.'; return; }
+    pendingInvite = token; $('#acceptInviteName').textContent = preview.room_name; $('#acceptInviter').textContent = preview.inviter_name;
+    status.textContent = ''; openModal('acceptInviteModal');
   }
   async function loadRooms(preferredId) {
     const result = await db.from('rooms').select('id,code,name,owner_id,media_key,avatar_url,created_at').order('created_at', { ascending: false });
@@ -331,6 +399,7 @@ export const appScript = String.raw`
       return;
     }
     pendingInvite = ''; history.replaceState(null, '', location.pathname); closeModal('acceptInviteModal');
+    $('#homeJoinInput').value = ''; $('#homeJoinStatus').textContent = ''; $('#homeJoinStatus').classList.remove('error');
     await loadRooms(accepted.room_id);
     showToast('Sala adicionada à sua conta.');
   }
@@ -956,7 +1025,7 @@ export const appScript = String.raw`
   async function enterRoom(room, joinStream) {
     cleanupPeer();
     stopRoomControls();
-    activeRoom = room; activeMembership = null; roomMembers.clear(); roomChannels = []; activeChannel = null; resetChat(); renderRooms(); updateRoomHeading();
+    activeRoom = room; rememberRoom(room.id); activeMembership = null; roomMembers.clear(); roomChannels = []; activeChannel = null; resetChat(); renderRooms(); updateRoomHeading();
     if (joinStream) {
       microphoneTrack = joinStream.getAudioTracks()[0] || null; cameraTrack = joinStream.getVideoTracks()[0] || null;
       const joinedMic = microphoneTrack, joinedCamera = cameraTrack;
@@ -964,8 +1033,9 @@ export const appScript = String.raw`
       joinedCamera?.addEventListener('ended', function () { if (cameraTrack === joinedCamera) { cameraTrack = null; refreshPublishing(); } });
       updateMediaButtons();
     }
-    $('#emptyStage').classList.add('hidden'); $('#mediaStage').classList.remove('hidden'); $('#mediaControls').classList.remove('hidden');
+    $('.room-layout').classList.remove('home-mode'); $('#emptyStage').classList.add('hidden'); $('#mediaStage').classList.remove('hidden'); $('#mediaControls').classList.remove('hidden');
     $('#roomTitle').textContent = room.name; $('#roomSubtitle').textContent = 'Sala ' + room.code; $('#chatRoomName').textContent = room.name;
+    $('#participantCount').classList.remove('hidden'); $('#inviteButton').classList.remove('hidden'); $('#toggleChat').classList.remove('hidden');
     $('#inviteButton').disabled = false; $('#messageInput').disabled = true; $('#sendMessage').disabled = true; $('#messageInput').placeholder = 'Carregando chats…';
     $('#sidebar').classList.remove('open'); setConnection('Conectando à sala…', false);
     if (!await loadRoomMembers()) return;
@@ -974,13 +1044,15 @@ export const appScript = String.raw`
     subscribeRoomControls(); await startPeerRoom(room);
   }
   function leaveActiveRoom() {
-    playCallSound('leave');
+    if (activeRoom) playCallSound('leave');
     cleanupPeer(); stopRoomControls();
     activeRoom = null; activeMembership = null; roomMembers.clear(); roomChannels = []; activeChannel = null; renderRooms(); resetChat(); renderChannels();
-    $('#roomSettingsButton').classList.add('hidden'); $('#manageRoomButton').classList.add('hidden'); $('#roomIdentityButton').classList.add('hidden'); $('#clearChannel').classList.add('hidden'); $('#headerRoomAvatar').style.backgroundImage=''; $('#headerRoomAvatar').textContent='#';
+    $('#roomSettingsButton').classList.add('hidden'); $('#manageRoomButton').classList.add('hidden'); $('#roomIdentityButton').classList.add('hidden'); $('#clearChannel').classList.add('hidden'); $('#headerRoomAvatar').style.backgroundImage=''; $('#headerRoomAvatar').textContent='M';
+    $('.room-layout').classList.add('home-mode'); $('.room-layout').classList.remove('chat-hidden'); $('#chatPanel').classList.remove('open');
     $('#emptyStage').classList.remove('hidden'); $('#mediaStage').classList.add('hidden'); $('#mediaControls').classList.add('hidden');
-    $('#roomTitle').textContent = 'Escolha uma sala'; $('#roomSubtitle').textContent = 'Suas salas ficam salvas aqui'; $('#chatRoomName').textContent = 'Selecione uma sala'; $('#activeChannelName').textContent = 'Conversa'; $('#participantCount').textContent = '0 online';
-    $('#inviteButton').disabled = true; $('#messageInput').disabled = true; $('#sendMessage').disabled = true; $('#messageInput').placeholder = 'Escolha uma sala para conversar';
+    $('#roomTitle').textContent = 'Início'; $('#roomSubtitle').textContent = 'Salas, convites e atalhos'; $('#chatRoomName').textContent = 'Selecione uma sala'; $('#activeChannelName').textContent = 'Conversa'; $('#participantCount').textContent = '0 online';
+    $('#participantCount').classList.add('hidden'); $('#inviteButton').classList.add('hidden'); $('#toggleChat').classList.add('hidden');
+    $('#inviteButton').disabled = true; $('#messageInput').disabled = true; $('#sendMessage').disabled = true; $('#messageInput').placeholder = 'Escolha uma sala para conversar'; renderHome();
   }
 
   function syncPreferences() {
@@ -1022,10 +1094,12 @@ export const appScript = String.raw`
   }
 
   $('#createForm').addEventListener('submit', createRoom);
+  $('#homeJoinForm').addEventListener('submit', handleHomeJoin);
   $('#messageForm').addEventListener('submit', sendMessage);
   $('#channelForm').addEventListener('submit', createChannel);
   $('#roomIdentityForm').addEventListener('submit', saveRoomNickname);
   ['newRoom', 'newRoomWide', 'emptyCreate'].forEach(function (id) { $('#' + id).addEventListener('click', function () { openModal('createModal'); setTimeout(function () { $('#roomNameInput').focus(); }, 50); }); });
+  $('#homeButton').addEventListener('click', function () { leaveActiveRoom(); $('#sidebar').classList.remove('open'); });
   document.querySelectorAll('[data-close]').forEach(function (button) { button.addEventListener('click', function () { closeModal(button.dataset.close); }); });
   document.querySelectorAll('.modal-backdrop').forEach(function (backdrop) { backdrop.addEventListener('click', function (event) { if (event.target === backdrop && backdrop.id !== 'acceptInviteModal') closeModal(backdrop.id); }); });
   $('#inviteButton').addEventListener('click', openInviteManager);

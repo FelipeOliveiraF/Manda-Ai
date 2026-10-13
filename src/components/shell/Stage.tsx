@@ -1,5 +1,4 @@
-import { Camera, ChevronUp, Mic, PhoneOff, Radio, ScreenShare } from "lucide-react";
-import { MostraAiRoomIcon } from "../brand/BrandIcons";
+import { ArrowRight, Camera, ChevronUp, Clock3, Link2, Mic, PhoneOff, Radio, ScreenShare } from "lucide-react";
 
 function MediaControls() {
   return (
@@ -28,11 +27,42 @@ function MediaControls() {
 export function Stage() {
   return (
     <section className="stage-panel" data-component="stage">
-      <div className="empty-stage" id="emptyStage">
-        <div className="empty-icon"><MostraAiRoomIcon /></div>
-        <h2>Onde vamos nos encontrar?</h2>
-        <p>Abra uma sala da sua lista ou crie um lugar só de vocês.</p>
-        <button className="primary-button" id="emptyCreate">Criar uma sala</button>
+      <div className="home-dashboard" id="emptyStage">
+        <section className="home-welcome">
+          <div>
+            <span className="home-eyebrow">SEU ESPAÇO</span>
+            <h2 id="homeGreeting">Que bom te ver por aqui.</h2>
+            <p id="homeRoomSummary">Suas salas e convites ficam reunidos em um só lugar.</p>
+          </div>
+          <div className="home-welcome-mark" aria-hidden="true">M</div>
+        </section>
+
+        <div className="home-grid">
+          <section className="home-card home-recents">
+            <header>
+              <span className="home-card-icon"><Clock3 /></span>
+              <div><h3>Salas recentes</h3><p>Continue de onde você parou.</p></div>
+            </header>
+            <div className="recent-room-grid" id="homeRecentRooms" />
+            <button className="secondary-button home-empty-create hidden" id="emptyCreate" type="button">Criar primeira sala</button>
+          </section>
+
+          <section className="home-card home-join-card">
+            <header>
+              <span className="home-card-icon"><Link2 /></span>
+              <div><h3>Entrar em uma sala</h3><p>Cole um convite ou abra uma sala salva.</p></div>
+            </header>
+            <form className="home-join-form" id="homeJoinForm">
+              <label htmlFor="homeJoinInput">Link de convite, código ou ID</label>
+              <div>
+                <input id="homeJoinInput" autoComplete="off" placeholder="Cole aqui para entrar" />
+                <button className="primary-button" id="homeJoinButton" type="submit" aria-label="Buscar sala"><ArrowRight /></button>
+              </div>
+              <p className="home-join-status" id="homeJoinStatus" role="status" />
+            </form>
+            <div className="home-tip"><strong>Dica</strong><span>Convites abrem uma confirmação antes de adicionar a sala à sua conta.</span></div>
+          </section>
+        </div>
       </div>
       <div className="media-stage hidden" id="mediaStage">
         <div className="connection-note" id="connectionNote"><i /><span>Conectando à sala…</span><strong id="connectionQuality">Verificando</strong></div>

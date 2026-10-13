@@ -9,7 +9,7 @@ export function AppShell() {
       <Sidebar />
       <main className="workspace">
         <RoomHeader />
-        <div className="room-layout">
+        <div className="room-layout home-mode">
           <Stage />
           <ChatPanel />
         </div>
