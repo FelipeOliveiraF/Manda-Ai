@@ -3,9 +3,11 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { startDiagnostics } from "./services/diagnostics";
+import { initializeTheme } from "./services/theme";
 import "./styles/app.css";
 
 window.__MOSTRA_AI_REACT__ = true;
+initializeTheme();
 startDiagnostics();
 
 async function start() {

@@ -6,6 +6,26 @@ export const appScript = String.raw`
   const GOOGLE_CLIENT_ID = '745889112770-idm2cc38g6fkjhcoqvv8emhk9j0kn99u.apps.googleusercontent.com';
   const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   const $ = function (selector) { return document.querySelector(selector); };
+  const THEME_KEY = 'mostra-theme';
+  const THEME_IDS = ['purple','dark','light'];
+
+  function currentTheme() {
+    const saved = localStorage.getItem(THEME_KEY);
+    return THEME_IDS.includes(saved) ? saved : 'purple';
+  }
+  function setTheme(theme, notify) {
+    const selected = THEME_IDS.includes(theme) ? theme : 'purple';
+    document.documentElement.dataset.theme = selected;
+    document.documentElement.style.colorScheme = selected === 'light' ? 'light' : 'dark';
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', selected === 'light' ? '#f6f7fb' : selected === 'dark' ? '#090a0c' : '#0b0a12');
+    localStorage.setItem(THEME_KEY, selected);
+    document.querySelectorAll('[data-theme-choice]').forEach(button => {
+      const active = button.dataset.themeChoice === selected;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+    if (notify) showToast('Tema ' + (selected === 'purple' ? 'Roxo' : selected === 'dark' ? 'Escuro' : 'Claro') + ' ativado.');
+  }
 
   let currentUser = null;
   let ownProfile = null;
@@ -177,7 +197,7 @@ export const appScript = String.raw`
     });
     const slot = $('#googleButton');
     slot.textContent = '';
-    google.accounts.id.renderButton(slot, { theme: 'filled_black', size: 'large', shape: 'pill', text: 'continue_with', width: Math.min(400, slot.clientWidth || 400), locale: 'pt-BR' });
+    google.accounts.id.renderButton(slot, { theme: currentTheme() === 'light' ? 'outline' : 'filled_black', size: 'large', shape: 'pill', text: 'continue_with', width: Math.min(400, slot.clientWidth || 400), locale: 'pt-BR' });
   }
 
   async function loadInvitePreview() {
@@ -972,6 +992,7 @@ export const appScript = String.raw`
     $('#installAppButton').disabled = installed || !available;
     $('#installAppStatus').textContent = installed ? 'Já instalado neste dispositivo' : available ? 'Usar como aplicativo no computador' : 'Disponível pelo menu do navegador';
     $('#landingInstallButton').classList.toggle('hidden', !available || installed);
+    setTheme(currentTheme(), false);
     setConnection(activeRoom ? $('#connectionNote span').textContent : 'Pronta para conversar', Boolean(activeRoom && $('#connectionNote').dataset.state === 'healthy'));
   }
   async function installApplication() {

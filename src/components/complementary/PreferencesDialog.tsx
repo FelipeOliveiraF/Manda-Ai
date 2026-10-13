@@ -1,7 +1,15 @@
 import { BellRing, Download, Gauge, Headphones, HeartPulse, Settings, UserRound } from "lucide-react";
+import { useState } from "react";
+import { applyTheme, getSavedTheme, type ThemeId } from "../../services/theme";
 import { CloseButton, SettingsHeading } from "./DialogParts";
 
 export function PreferencesDialog() {
+  const [theme, setTheme] = useState<ThemeId>(getSavedTheme);
+  const chooseTheme = (nextTheme: ThemeId) => {
+    applyTheme(nextTheme);
+    setTheme(nextTheme);
+  };
+
   return <div className="modal-backdrop hidden" id="preferencesModal" data-component="preferences-dialog">
     <div className="modal preferences-modal complementary-modal">
       <CloseButton modal="preferencesModal" />
@@ -23,6 +31,25 @@ export function PreferencesDialog() {
         <button className="preference-action" id="openDevicesFromSettings" type="button"><Headphones /><span><strong>Áudio e vídeo</strong><small>Câmera e microfone</small></span></button>
         <button className="preference-action install-action" id="installAppButton" type="button"><Download /><span><strong>Instalar aplicativo</strong><small id="installAppStatus">Verificando disponibilidade…</small></span></button>
       </div>
+      <div className="settings-version"><span className="version-dot" aria-hidden="true" />Mostra aí · Versão 1.17</div>
+      <fieldset className="theme-settings" aria-labelledby="themeSettingsTitle">
+        <legend id="themeSettingsTitle">Aparência</legend>
+        <p>Escolha como o Mostra aí aparece neste dispositivo.</p>
+        <div className="theme-options">
+          <button type="button" className={`theme-option ${theme === "purple" ? "active" : ""}`} data-theme-choice="purple" aria-pressed={theme === "purple"} onClick={() => chooseTheme("purple")}>
+            <span className="theme-preview theme-preview-purple"><i /><i /><i /></span>
+            <span><strong>Roxo</strong><small>Vivo e original</small></span><b className="theme-check" aria-hidden="true">✓</b>
+          </button>
+          <button type="button" className={`theme-option ${theme === "dark" ? "active" : ""}`} data-theme-choice="dark" aria-pressed={theme === "dark"} onClick={() => chooseTheme("dark")}>
+            <span className="theme-preview theme-preview-dark"><i /><i /><i /></span>
+            <span><strong>Escuro</strong><small>Grafite e branco</small></span><b className="theme-check" aria-hidden="true">✓</b>
+          </button>
+          <button type="button" className={`theme-option ${theme === "light" ? "active" : ""}`} data-theme-choice="light" aria-pressed={theme === "light"} onClick={() => chooseTheme("light")}>
+            <span className="theme-preview theme-preview-light"><i /><i /><i /></span>
+            <span><strong>Claro</strong><small>Limpo e leve</small></span><b className="theme-check" aria-hidden="true">✓</b>
+          </button>
+        </div>
+      </fieldset>
     </div>
   </div>;
 }
