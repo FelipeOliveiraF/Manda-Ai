@@ -165,6 +165,7 @@ export const appScript = String.raw`
   }
   function setAuthStatus(message, canRetry) {
     $('#authStatusMessage').textContent = message;
+    $('#authStatus').classList.toggle('hidden', !message);
     $('#retryStartup').classList.toggle('hidden', !canRetry);
   }
   function authError(error) {
