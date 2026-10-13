@@ -198,7 +198,16 @@ export const appScript = String.raw`
     });
     const slot = $('#googleButton');
     slot.textContent = '';
-    google.accounts.id.renderButton(slot, { theme: currentTheme() === 'light' ? 'outline' : 'filled_black', size: 'large', shape: 'pill', text: 'continue_with', width: Math.min(400, slot.clientWidth || 400), locale: 'pt-BR' });
+    google.accounts.id.renderButton(slot, {
+      type: 'standard',
+      theme: currentTheme() === 'light' ? 'outline' : 'filled_black',
+      size: 'large',
+      shape: 'rectangular',
+      text: 'continue_with',
+      logo_alignment: 'left',
+      width: Math.min(400, Math.floor(slot.getBoundingClientRect().width) || 400),
+      locale: 'pt-BR'
+    });
   }
 
   async function loadInvitePreview() {

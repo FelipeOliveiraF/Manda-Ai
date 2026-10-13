@@ -28,7 +28,7 @@ export function AuthScreen() {
           </div>
           <div className="google-slot" id="googleButton" />
           <div className="auth-status" id="authStatus" role="status" aria-live="polite">
-            <span id="authStatusMessage">Entre com o Google para continuar.</span>
+            <span id="authStatusMessage">Acesso seguro — não vemos sua senha.</span>
             <button className="text-button hidden" id="retryStartup" type="button" onClick={() => location.reload()}>Tentar novamente</button>
           </div>
           <p className="auth-legal">Ao entrar, você concorda com os <a href="/terms">Termos</a> e a <a href="/privacy">Privacidade</a>.</p>

@@ -799,10 +799,23 @@ html[data-theme="dark"] .home-mascot { filter: grayscale(.12) drop-shadow(0 20px
 }
 
 [data-component="auth-screen"] .google-slot {
-  padding: 7px;
-  border: 1px solid #ffffff0d;
-  border-radius: 14px;
-  background: #ffffff06;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+[data-component="auth-screen"] .google-slot > div,
+[data-component="auth-screen"] .google-slot iframe {
+  width: 100% !important;
+  max-width: 400px;
+}
+
+[data-component="auth-screen"] .google-slot iframe {
+  display: block;
+  margin: 0 auto !important;
 }
 
 .complementary-modal {
