@@ -38,4 +38,22 @@ const runtimePath = appSource.match(/["'](\/assets\/application-runtime(?:-[^"']
 assert.ok(runtimePath, "React entrypoint should lazy-load the application runtime");
 assert.equal((await fetchAsset(runtimePath)).status, 200, "runtime chunk should be served");
 
+// Follow the complete JavaScript module graph. This catches broken nested
+// imports such as a chunk resolving ./app.js to the nonexistent /assets/app.js.
+const pendingModules = ["/app.js"];
+const checkedModules = new Set();
+while (pendingModules.length) {
+  const pathname = pendingModules.shift();
+  if (checkedModules.has(pathname)) continue;
+  checkedModules.add(pathname);
+  const response = await fetchAsset(pathname);
+  assert.equal(response.status, 200, `${pathname} referenced by the module graph should be served`);
+  const sourceText = await response.text();
+  const imports = sourceText.matchAll(/(?:from\s*|import\s*\(\s*)["']([^"']+\.js)["']/g);
+  for (const match of imports) {
+    const dependency = new URL(match[1], `https://local.invalid${pathname}`).pathname;
+    if (!checkedModules.has(dependency)) pendingModules.push(dependency);
+  }
+}
+
 console.log("Artifact is valid ESM, code-split and free of the legacy runtime route");

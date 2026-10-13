@@ -16,6 +16,13 @@ const [viteHtml, viteAppJs, appCss, hosting, viteAssetNames] = await Promise.all
   readdir(resolve(viteRoot, "assets")),
 ]);
 const appJs = viteAppJs.replace(/import\(["']\.\/([^"']+\.js)["']\)/g, 'import("/assets/$1")');
+const rewriteChunkImports = (source) => source
+  // O entrypoint é publicado em /app.js, fora da pasta dos chunks. O Rollup
+  // gera imports relativos para ele dentro dos chunks compartilhados; sem
+  // esta correção o navegador tenta abrir /assets/app.js e aborta o runtime.
+  .replace(/from\s*(["'])\.\/app\.js\1/g, 'from "/app.js"')
+  .replace(/import\s*(["'])\.\/app\.js\1/g, 'import "/app.js"')
+  .replace(/import\(\s*(["'])\.\/app\.js\1\s*\)/g, 'import("/app.js")');
 const html = viteHtml
   .replaceAll("/assets/app.js", "/app.js")
   .replaceAll("/assets/app.css", "/app.css");
@@ -34,7 +41,8 @@ const serviceWorker = `const CACHE='mostra-ai-react-v4';const SHELL=${JSON.strin
 const assets = { "/": [html, "text/html; charset=utf-8"], "/index.html": [html, "text/html; charset=utf-8"], "/app.js": [appJs, "text/javascript; charset=utf-8"], "/app.css": [appCss, "text/css; charset=utf-8"], "/privacy": [privacy, "text/html; charset=utf-8"], "/terms": [terms, "text/html; charset=utf-8"], "/icon.svg": [icon, "image/svg+xml"], "/manifest.webmanifest": [manifest, "application/manifest+json"], "/sw.js": [serviceWorker, "text/javascript; charset=utf-8"] };
 for (const name of viteAssetNames) {
   if (["app.js", "app.css"].includes(name)) continue;
-  const content = await readFile(resolve(viteRoot, "assets", name), "utf8");
+  const rawContent = await readFile(resolve(viteRoot, "assets", name), "utf8");
+  const content = name.endsWith(".js") ? rewriteChunkImports(rawContent) : rawContent;
   assets[`/assets/${name}`] = [content, name.endsWith(".css") ? "text/css; charset=utf-8" : "text/javascript; charset=utf-8"];
 }
 const worker = `const assets = ${JSON.stringify(assets)};\nexport default { async fetch(request) { const pathname = new URL(request.url).pathname; const asset = assets[pathname]; if (!asset) return new Response("Not found", { status: 404 }); return new Response(asset[0], { headers: { "content-type": asset[1], "cache-control": pathname === "/" || pathname === "/index.html" || pathname.endsWith(".js") || pathname.endsWith(".css") ? "no-cache" : "public, max-age=3600", "referrer-policy": "strict-origin-when-cross-origin", "x-content-type-options": "nosniff", "permissions-policy": "camera=(self), microphone=(self), display-capture=(self)", "strict-transport-security": "max-age=31536000; includeSubDomains", "x-frame-options": "SAMEORIGIN" } }); } };\n`;
