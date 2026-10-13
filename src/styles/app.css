@@ -466,45 +466,48 @@ body,
   height: 148px;
   margin: 0 -8px -18px 28px;
   align-self: flex-end;
-  filter: drop-shadow(0 20px 24px color-mix(in srgb, var(--color-primary) 24%, transparent));
+  filter: drop-shadow(0 18px 18px color-mix(in srgb, var(--color-primary) 25%, transparent));
   user-select: none;
 }
 
+.home-mascot::after {
+  position: absolute;
+  right: 18%;
+  bottom: 6px;
+  left: 18%;
+  height: 10px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-primary) 20%, transparent);
+  filter: blur(6px);
+  content: "";
+  animation: mascot-shadow 3.6s steps(1, end) infinite;
+}
+
 .home-mascot img {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
+  image-rendering: pixelated;
   transform-origin: 50% 90%;
-  animation: mascot-float 4.8s ease-in-out infinite;
+  animation: mascot-idle 3.6s steps(1, end) infinite;
 }
 
-.home-mascot-message {
-  position: absolute;
-  z-index: 2;
-  top: -15px;
-  right: 2px;
-  padding: 7px 10px;
-  transform: translateY(5px) rotate(2deg);
-  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, var(--color-border));
-  border-radius: 12px 12px 3px 12px;
-  background: color-mix(in srgb, var(--color-surface-1) 94%, transparent);
-  color: var(--color-text);
-  box-shadow: var(--shadow-sm);
-  font-size: 10px;
-  font-weight: 750;
-  opacity: 0;
-  transition: opacity .2s ease, transform .2s ease;
+@keyframes mascot-idle {
+  0%, 52%, 100% { transform: translateY(0) rotate(0); }
+  56% { transform: translateY(-3px) rotate(-1deg); }
+  60% { transform: translateY(-6px) rotate(0); }
+  64% { transform: translateY(-3px) rotate(1deg); }
+  68% { transform: translateY(0) rotate(0); }
+  72% { transform: translateY(-2px); }
+  76% { transform: translateY(0); }
 }
 
-.home-mascot:hover .home-mascot-message {
-  transform: translateY(0) rotate(2deg);
-  opacity: 1;
-}
-
-@keyframes mascot-float {
-  0%, 100% { transform: translateY(0) rotate(-1.5deg); }
-  50% { transform: translateY(-6px) rotate(1.5deg); }
+@keyframes mascot-shadow {
+  0%, 52%, 68%, 76%, 100% { transform: scaleX(1); opacity: .72; }
+  60% { transform: scaleX(.72); opacity: .42; }
 }
 
 .home-grid {
@@ -1330,7 +1333,6 @@ html[data-theme="dark"] .home-mascot { filter: grayscale(.12) drop-shadow(0 20px
     height: 104px;
     margin: 0;
   }
-  .home-mascot-message { display: none; }
   .home-welcome h2 { font-size: 28px; }
   .home-grid { gap: 12px; margin-top: 12px; }
   .home-card { padding: 17px; border-radius: 16px; }

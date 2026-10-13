@@ -37,6 +37,13 @@ const appSource = await (await fetchAsset("/app.js")).text();
 const runtimePath = appSource.match(/["'](\/assets\/application-runtime(?:-[^"']+)?\.js)["']/)?.[1];
 assert.ok(runtimePath, "React entrypoint should lazy-load the application runtime");
 assert.equal((await fetchAsset(runtimePath)).status, 200, "runtime chunk should be served");
+const mascotPath = appSource.match(/["'](\/assets\/mostra-ai-mascot-pixel(?:-[^"']+)?\.png)["']/)?.[1];
+assert.ok(mascotPath, "React entrypoint should reference the pixel-art mascot");
+const mascotResponse = await fetchAsset(mascotPath);
+assert.equal(mascotResponse.status, 200, "mascot image should be served");
+assert.equal(mascotResponse.headers.get("content-type"), "image/png", "mascot should use the PNG content type");
+const mascotBytes = new Uint8Array(await mascotResponse.arrayBuffer());
+assert.deepEqual(Array.from(mascotBytes.slice(0, 8)), [137, 80, 78, 71, 13, 10, 26, 10], "mascot should retain its PNG signature");
 
 // Follow the complete JavaScript module graph. This catches broken nested
 // imports such as a chunk resolving ./app.js to the nonexistent /assets/app.js.

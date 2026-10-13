@@ -41,11 +41,23 @@ const serviceWorker = `const CACHE='mostra-ai-react-v6';const SHELL=${JSON.strin
 const assets = { "/": [html, "text/html; charset=utf-8"], "/index.html": [html, "text/html; charset=utf-8"], "/app.js": [appJs, "text/javascript; charset=utf-8"], "/app.css": [appCss, "text/css; charset=utf-8"], "/privacy": [privacy, "text/html; charset=utf-8"], "/terms": [terms, "text/html; charset=utf-8"], "/icon.svg": [icon, "image/svg+xml"], "/manifest.webmanifest": [manifest, "application/manifest+json"], "/sw.js": [serviceWorker, "text/javascript; charset=utf-8"] };
 for (const name of viteAssetNames) {
   if (["app.js", "app.css"].includes(name)) continue;
-  const rawContent = await readFile(resolve(viteRoot, "assets", name), "utf8");
-  const content = name.endsWith(".js") ? rewriteChunkImports(rawContent) : rawContent;
-  assets[`/assets/${name}`] = [content, name.endsWith(".css") ? "text/css; charset=utf-8" : "text/javascript; charset=utf-8"];
+  const assetPath = resolve(viteRoot, "assets", name);
+  if (name.endsWith(".js") || name.endsWith(".css")) {
+    const rawContent = await readFile(assetPath, "utf8");
+    const content = name.endsWith(".js") ? rewriteChunkImports(rawContent) : rawContent;
+    assets[`/assets/${name}`] = [content, name.endsWith(".css") ? "text/css; charset=utf-8" : "text/javascript; charset=utf-8"];
+    continue;
+  }
+
+  const mimeType = name.endsWith(".png") ? "image/png"
+    : name.endsWith(".webp") ? "image/webp"
+      : name.endsWith(".jpg") || name.endsWith(".jpeg") ? "image/jpeg"
+        : name.endsWith(".svg") ? "image/svg+xml"
+          : "application/octet-stream";
+  const content = (await readFile(assetPath)).toString("base64");
+  assets[`/assets/${name}`] = [content, mimeType, true];
 }
-const worker = `const assets = ${JSON.stringify(assets)};\nconst LEGACY_HOST = "grupo-dos-amigos-tela.flof0.chatgpt.site";\nconst OFFICIAL_ORIGIN = "https://mostraai.online";\nexport default { async fetch(request) { const url = new URL(request.url); if (url.hostname === LEGACY_HOST) return Response.redirect(OFFICIAL_ORIGIN + url.pathname + url.search, 308); const pathname = url.pathname; const asset = assets[pathname]; if (!asset) return new Response("Not found", { status: 404 }); return new Response(asset[0], { headers: { "content-type": asset[1], "cache-control": pathname === "/" || pathname === "/index.html" || pathname.endsWith(".js") || pathname.endsWith(".css") ? "no-cache" : "public, max-age=3600", "referrer-policy": "strict-origin-when-cross-origin", "x-content-type-options": "nosniff", "permissions-policy": "camera=(self), microphone=(self), display-capture=(self)", "strict-transport-security": "max-age=31536000; includeSubDomains", "x-frame-options": "SAMEORIGIN" } }); } };\n`;
+const worker = `const assets = ${JSON.stringify(assets)};\nconst LEGACY_HOST = "grupo-dos-amigos-tela.flof0.chatgpt.site";\nconst OFFICIAL_ORIGIN = "https://mostraai.online";\nfunction decodeBase64(value) { const binary = atob(value); const bytes = new Uint8Array(binary.length); for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index); return bytes; }\nexport default { async fetch(request) { const url = new URL(request.url); if (url.hostname === LEGACY_HOST) return Response.redirect(OFFICIAL_ORIGIN + url.pathname + url.search, 308); const pathname = url.pathname; const asset = assets[pathname]; if (!asset) return new Response("Not found", { status: 404 }); const body = asset[2] ? decodeBase64(asset[0]) : asset[0]; return new Response(body, { headers: { "content-type": asset[1], "cache-control": pathname === "/" || pathname === "/index.html" || pathname.endsWith(".js") || pathname.endsWith(".css") ? "no-cache" : "public, max-age=3600", "referrer-policy": "strict-origin-when-cross-origin", "x-content-type-options": "nosniff", "permissions-policy": "camera=(self), microphone=(self), display-capture=(self)", "strict-transport-security": "max-age=31536000; includeSubDomains", "x-frame-options": "SAMEORIGIN" } }); } };\n`;
 
 await rm(distRoot, { recursive: true, force: true });
 await mkdir(serverRoot, { recursive: true });
