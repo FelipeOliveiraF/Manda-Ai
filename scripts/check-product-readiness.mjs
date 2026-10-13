@@ -39,5 +39,6 @@ for (const marker of ["saveThemePreference", "mostra:theme-change"]) assert.matc
 for (const marker of ["THEME_IDS", "data-theme-choice", "setTheme", "currentTheme"]) assert.match(runtime, new RegExp(marker));
 for (const marker of ["user_preferences", "mostra:theme-change", "preferenceResult.data?.theme"]) assert.match(runtime, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 assert.match(packager, /brand\/mostra-ai-mark\.svg/); assert.match(packager, /caches\.open/); assert.match(packager, /shellAssets/); assert.match(packager, /mostra-ai-react-v6/); assert.match(packager, /strict-transport-security/);
+assert.match(packager, /grupo-dos-amigos-tela\.flof0\.chatgpt\.site/); assert.match(packager, /https:\/\/mostraai\.online/); assert.match(packager, /Response\.redirect/); assert.match(packager, /308/);
 
 console.log("PASS: commercial landing, preferences, PWA and call resilience are wired");
