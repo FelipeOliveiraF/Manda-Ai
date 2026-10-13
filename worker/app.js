@@ -1016,14 +1016,14 @@ export const appScript = String.raw`
     } catch (error) { $('#prejoinError').textContent = mediaError(error, isMic ? 'mic' : 'camera'); }
   }
   async function openRoom(room) {
-    if (activeRoom && activeRoom.id === room.id) { $('#sidebar').classList.remove('open'); return; }
+    if (activeRoom && activeRoom.id === room.id) { setMobileSidebar(false); return; }
     stopPrejoin(); pendingJoinRoom = room; $('#prejoinRoomName').textContent = room.name; $('#prejoinError').textContent = ''; $('#prejoinName').value = userName(); setAvatar($('#prejoinAvatar'), userName(), avatarUrl());
     const membership = await db.from('room_members').select('room_id,user_id,role,display_name,is_muted,can_share_screen').eq('room_id', room.id).eq('user_id', currentUser.id).maybeSingle();
     if (pendingJoinRoom?.id !== room.id) return;
     if (membership.error || !membership.data) { pendingJoinRoom = null; showToast('Você não tem mais acesso a esta sala.'); await loadRooms(); return; }
     pendingJoinMembership = membership.data; $('#prejoinName').value = membership.data.display_name || userName(); setAvatar($('#prejoinAvatar'), $('#prejoinName').value, avatarUrl()); $('#prejoinMic').disabled = Boolean(membership.data.is_muted);
     const memberCount = await db.from('room_members').select('user_id', { count: 'exact', head: true }).eq('room_id', room.id); $('#prejoinOnline').textContent = (memberCount.count || 1) + ((memberCount.count || 1) === 1 ? ' pessoa tem acesso a esta sala.' : ' pessoas têm acesso a esta sala.');
-    await populatePrejoinDevices(); updatePrejoinPreview(); openModal('prejoinModal'); $('#sidebar').classList.remove('open');
+    await populatePrejoinDevices(); updatePrejoinPreview(); openModal('prejoinModal'); setMobileSidebar(false);
   }
   async function confirmPrejoin() {
     const room = pendingJoinRoom, name = $('#prejoinName').value.trim(); if (!room || !name) { $('#prejoinError').textContent = 'Escolha o nome que você vai usar nesta sala.'; return; }
@@ -1047,7 +1047,7 @@ export const appScript = String.raw`
     $('#roomTitle').textContent = room.name; $('#roomSubtitle').textContent = 'Sala ' + room.code; $('#chatRoomName').textContent = room.name;
     $('#participantCount').classList.remove('hidden'); $('#inviteButton').classList.remove('hidden'); $('#toggleChat').classList.remove('hidden');
     $('#inviteButton').disabled = false; $('#messageInput').disabled = true; $('#sendMessage').disabled = true; $('#messageInput').placeholder = 'Carregando chats…';
-    $('#sidebar').classList.remove('open'); setConnection('Conectando à sala…', false);
+    setMobileSidebar(false); setConnection('Conectando à sala…', false);
     if (!await loadRoomMembers()) return;
     await loadChannels();
     $('#messageInput').disabled = !activeChannel; $('#sendMessage').disabled = !activeChannel;
@@ -1059,6 +1059,7 @@ export const appScript = String.raw`
     activeRoom = null; activeMembership = null; roomMembers.clear(); roomChannels = []; activeChannel = null; renderRooms(); resetChat(); renderChannels();
     $('#roomSettingsButton').classList.add('hidden'); $('#manageRoomButton').classList.add('hidden'); $('#roomIdentityButton').classList.add('hidden'); $('#clearChannel').classList.add('hidden'); $('#headerRoomAvatar').style.backgroundImage=''; $('#headerRoomAvatar').textContent='M';
     $('.room-layout').classList.add('home-mode'); $('.room-layout').classList.remove('chat-hidden'); $('#chatPanel').classList.remove('open');
+    document.documentElement.classList.remove('mobile-chat-open'); setMobileSidebar(false);
     $('#emptyStage').classList.remove('hidden'); $('#mediaStage').classList.add('hidden'); $('#mediaControls').classList.add('hidden');
     $('#roomTitle').textContent = 'Início'; $('#roomSubtitle').textContent = 'Salas, convites e atalhos'; $('#chatRoomName').textContent = 'Selecione uma sala'; $('#activeChannelName').textContent = 'Conversa'; $('#participantCount').textContent = '0 online';
     $('#participantCount').classList.add('hidden'); $('#inviteButton').classList.add('hidden'); $('#toggleChat').classList.add('hidden');
@@ -1124,7 +1125,7 @@ export const appScript = String.raw`
   $('#channelForm').addEventListener('submit', createChannel);
   $('#roomIdentityForm').addEventListener('submit', saveRoomNickname);
   ['newRoom', 'newRoomWide', 'emptyCreate'].forEach(function (id) { $('#' + id).addEventListener('click', function () { openModal('createModal'); setTimeout(function () { $('#roomNameInput').focus(); }, 50); }); });
-  $('#homeButton').addEventListener('click', function () { leaveActiveRoom(); $('#sidebar').classList.remove('open'); });
+  $('#homeButton').addEventListener('click', function () { leaveActiveRoom(); setMobileSidebar(false); });
   document.querySelectorAll('[data-close]').forEach(function (button) { button.addEventListener('click', function () { closeModal(button.dataset.close); }); });
   document.querySelectorAll('.modal-backdrop').forEach(function (backdrop) { backdrop.addEventListener('click', function (event) { if (event.target === backdrop && backdrop.id !== 'acceptInviteModal') closeModal(backdrop.id); }); });
   $('#inviteButton').addEventListener('click', openInviteManager);
@@ -1133,17 +1134,31 @@ export const appScript = String.raw`
   $('#acceptInvite').addEventListener('click', acceptInvite);
   $('#declineInvite').addEventListener('click', function () { pendingInvite = ''; history.replaceState(null, '', location.pathname); closeModal('acceptInviteModal'); });
   $('#logoutButton').addEventListener('click', async function () { await db.auth.signOut(); });
-  $('#openSidebar').addEventListener('click', function () { $('#sidebar').classList.add('open'); }); $('#closeSidebar').addEventListener('click', function () { $('#sidebar').classList.remove('open'); });
+  function setMobileSidebar(open) {
+    $('#sidebar').classList.toggle('open', open);
+    $('#mobileScrim').classList.toggle('visible', open);
+    $('#mobileScrim').setAttribute('aria-hidden', String(!open));
+    document.documentElement.classList.toggle('mobile-layer-open', open);
+  }
+  $('#openSidebar').addEventListener('click', function () { setMobileSidebar(true); });
+  $('#closeSidebar').addEventListener('click', function () { setMobileSidebar(false); });
+  $('#mobileScrim').addEventListener('click', function () { setMobileSidebar(false); });
   function toggleChat(force) {
     if (window.matchMedia('(max-width:980px)').matches) {
       const open = typeof force==='boolean' ? force : !$('#chatPanel').classList.contains('open');
       $('.room-layout').classList.remove('chat-hidden'); $('#chatPanel').classList.toggle('open',open); $('#toggleChat').setAttribute('aria-pressed',String(open));
+      document.documentElement.classList.toggle('mobile-chat-open', open);
     } else {
       const open = typeof force==='boolean' ? force : $('.room-layout').classList.contains('chat-hidden');
       $('.room-layout').classList.toggle('chat-hidden',!open); $('#toggleChat').setAttribute('aria-pressed',String(open));
     }
   }
   $('#toggleChat').addEventListener('click', function () { toggleChat(); }); $('#closeChat').addEventListener('click', function () { toggleChat(false); });
+  window.addEventListener('keydown', function (event) {
+    if (event.key !== 'Escape' || !window.matchMedia('(max-width:720px)').matches) return;
+    if ($('#sidebar').classList.contains('open')) setMobileSidebar(false);
+    else if ($('#chatPanel').classList.contains('open')) toggleChat(false);
+  });
   $('#clearChannel').addEventListener('click', clearActiveChannel);
   $('#cancelReply').addEventListener('click', clearReply); $('#closePinned').addEventListener('click', function () { $('#pinnedPanel').classList.add('hidden'); });
   $('#gestureButton').addEventListener('click', function () { const open = $('#gestureMenu').classList.contains('hidden'); $('#gestureMenu').classList.toggle('hidden', !open); $('#gestureButton').setAttribute('aria-expanded', String(open)); });
