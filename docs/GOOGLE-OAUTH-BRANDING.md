@@ -6,9 +6,10 @@ Este documento registra a configuração profissional planejada para o login do 
 
 - Nome do app: `Mostra aí`
 - E-mail de suporte: `felu.leo2016@gmail.com`
-- Página inicial atual: `https://grupo-dos-amigos-tela.flof0.chatgpt.site/`
-- Política de privacidade: `https://grupo-dos-amigos-tela.flof0.chatgpt.site/privacy`
-- Termos de uso: `https://grupo-dos-amigos-tela.flof0.chatgpt.site/terms`
+- Domínio oficial: `https://mostraai.online/`
+- Política de privacidade: `https://mostraai.online/privacy`
+- Termos de uso: `https://mostraai.online/terms`
+- Endereço técnico de contingência: `https://grupo-dos-amigos-tela.flof0.chatgpt.site/`
 - Público: externo
 - Escopos solicitados: somente identidade básica (`openid`, `email` e `profile`)
 
@@ -16,8 +17,8 @@ Este documento registra a configuração profissional planejada para o login do 
 
 1. Em Google Auth Platform, preencher Branding com o nome, o e-mail de suporte e os links acima.
 2. Em Audience, manter o app como externo e publicar quando os testes estiverem concluídos.
-3. Em Clients, abrir o cliente Web do Mostra aí e manter a origem JavaScript atual autorizada.
-4. Quando existir um domínio próprio, adicionar a nova origem HTTPS ao cliente, trocar os links públicos e cadastrar o domínio em Branding.
+3. Em Clients, abrir o cliente Web do Mostra aí e autorizar `https://mostraai.online` e `https://www.mostraai.online` como origens JavaScript.
+4. Cadastrar `mostraai.online` em Branding como domínio oficial do aplicativo.
 5. Se o Google solicitar, comprovar a propriedade do domínio no Search Console e enviar a marca para verificação.
 
 ## Critério de conclusão
