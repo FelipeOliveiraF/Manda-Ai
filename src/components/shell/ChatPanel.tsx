@@ -1,4 +1,5 @@
-import { MessageCircle, Send, Trash2, X } from "lucide-react";
+import { Send, Trash2, X } from "lucide-react";
+import { MostraAiChatIcon } from "../brand/BrandIcons";
 
 export function ChatPanel() {
   return (
@@ -16,7 +17,7 @@ export function ChatPanel() {
         <div id="pinnedMessages" />
       </div>
       <div className="messages" id="messages">
-        <div className="chat-empty"><span><MessageCircle aria-hidden="true" /></span><strong>O chat começa aqui</strong><small>As mensagens desta sala aparecem para todos os membros.</small></div>
+        <div className="chat-empty"><span><MostraAiChatIcon /></span><strong>O chat começa aqui</strong><small>As mensagens desta sala aparecem para todos os membros.</small></div>
       </div>
       <div className="reply-preview hidden" id="replyPreview">
         <div><small>Respondendo a <strong id="replyName">alguém</strong></small><span id="replyText" /></div>

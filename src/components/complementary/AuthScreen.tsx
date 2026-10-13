@@ -1,4 +1,5 @@
-import { Download, Headphones, MessageCircle, MonitorUp, ShieldCheck, Sparkles } from "lucide-react";
+import { Download, MonitorUp, ShieldCheck, Sparkles } from "lucide-react";
+import { MostraAiChatIcon, MostraAiMark } from "../brand/BrandIcons";
 import { Brand } from "../shell/Brand";
 
 export function AuthScreen() {
@@ -11,13 +12,13 @@ export function AuthScreen() {
           <h1>Mostra aí.<br /><span>O espaço é de vocês.</span></h1>
           <p>Compartilhe tela, câmera e áudio. Converse por texto e mantenha suas salas sempre por perto.</p>
           <div className="landing-features">
-            <span><MonitorUp /> Tela com áudio</span><span><MessageCircle /> Chats por sala</span><span><ShieldCheck /> Controle de membros</span>
+            <span><MonitorUp /> Tela com áudio</span><span><MostraAiChatIcon /> Chats por sala</span><span><ShieldCheck /> Controle de membros</span>
           </div>
           <button className="secondary-button landing-install hidden" id="landingInstallButton" type="button"><Download /> Instalar aplicativo</button>
           <small className="landing-trust">Privacidade por padrão • mídia não gravada • direto no navegador</small>
         </div>
         <div className="auth-card">
-          <div className="auth-emblem"><Headphones aria-hidden="true" /></div>
+          <div className="auth-emblem"><MostraAiMark /></div>
           <span className="auth-eyebrow">ENTRE NO SEU ESPAÇO</span>
           <h2>Bom te ver por aqui.</h2>
           <p>Use sua conta Google para acessar suas salas.</p>

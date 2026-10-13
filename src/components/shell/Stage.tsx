@@ -1,4 +1,5 @@
-import { Camera, ChevronUp, Headphones, Mic, PhoneOff, Radio, ScreenShare } from "lucide-react";
+import { Camera, ChevronUp, Mic, PhoneOff, Radio, ScreenShare } from "lucide-react";
+import { MostraAiRoomIcon } from "../brand/BrandIcons";
 
 function MediaControls() {
   return (
@@ -28,7 +29,7 @@ export function Stage() {
   return (
     <section className="stage-panel" data-component="stage">
       <div className="empty-stage" id="emptyStage">
-        <div className="empty-icon"><Headphones aria-hidden="true" /></div>
+        <div className="empty-icon"><MostraAiRoomIcon /></div>
         <h2>Onde vamos nos encontrar?</h2>
         <p>Abra uma sala da sua lista ou crie um lugar só de vocês.</p>
         <button className="primary-button" id="emptyCreate">Criar uma sala</button>

@@ -319,7 +319,7 @@ export const appScript = String.raw`
     if (chatChannel) db.removeChannel(chatChannel);
     chatChannel = null;
     currentMessages = []; clearReply(); $('#pinnedPanel').classList.add('hidden'); $('#pinnedMessages').textContent = '';
-    $('#messages').innerHTML = '<div class="chat-empty"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-1 2V11.5a8.5 8.5 0 0 1 18 0Z"/><path d="M7 9h10M7 13h6"/></svg></span><strong>O chat começa aqui</strong><small>As mensagens desta sala aparecem para todos os membros.</small></div>';
+    $('#messages').innerHTML = '<div class="chat-empty"><span><svg class="mostra-ai-chat-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6.5 4.5h10A4.5 4.5 0 0 1 21 9v4a4.5 4.5 0 0 1-4.5 4.5H12L7.5 21v-3.5h-1A4.5 4.5 0 0 1 2 13V9a4.5 4.5 0 0 1 4.5-4.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M7 9h10M7 13h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M17.5 3v3M16 4.5h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><strong>O chat começa aqui</strong><small>As mensagens desta sala aparecem para todos os membros.</small></div>';
   }
   async function loadMessages() {
     if (!activeRoom || !activeChannel) return;
@@ -344,7 +344,7 @@ export const appScript = String.raw`
     currentMessages = items; renderPinnedMessages(items);
     const list = $('#messages'); list.textContent = '';
     if (!items.length) {
-      list.innerHTML = '<div class="chat-empty"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-1 2V11.5a8.5 8.5 0 0 1 18 0Z"/><path d="M7 9h10M7 13h6"/></svg></span><strong>O chat começa aqui</strong><small>Mande a primeira mensagem para a sala.</small></div>';
+      list.innerHTML = '<div class="chat-empty"><span><svg class="mostra-ai-chat-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6.5 4.5h10A4.5 4.5 0 0 1 21 9v4a4.5 4.5 0 0 1-4.5 4.5H12L7.5 21v-3.5h-1A4.5 4.5 0 0 1 2 13V9a4.5 4.5 0 0 1 4.5-4.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M7 9h10M7 13h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M17.5 3v3M16 4.5h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><strong>O chat começa aqui</strong><small>Mande a primeira mensagem para a sala.</small></div>';
       return;
     }
     const byId = new Map(items.map(function (item) { return [item.id, item]; }));
@@ -579,7 +579,7 @@ export const appScript = String.raw`
       mute.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path class="volume-waves" d="M15 9a4 4 0 0 1 0 6m3-9a8 8 0 0 1 0 12"/></svg>';
       const slider = document.createElement('input'); slider.type = 'range'; slider.className = 'tile-volume-range'; slider.min = '0'; slider.max = '1'; slider.step = '0.05'; slider.value = '1';
       const amount = document.createElement('span'); amount.className = 'tile-volume-value'; amount.textContent = '100%';
-      const brand = document.createElement('div'); brand.className = 'tile-fullscreen-brand'; brand.innerHTML = '<span class="brand-mark">M</span><strong>Mostra aí</strong><small>Você está vendo uma transmissão</small>';
+      const brand = document.createElement('div'); brand.className = 'tile-fullscreen-brand'; brand.innerHTML = '<span class="brand-mark"><svg class="mostra-ai-mark" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M10 8.5h28a6.5 6.5 0 0 1 6.5 6.5v16a6.5 6.5 0 0 1-6.5 6.5H25.5L16 44v-6.5h-6A6.5 6.5 0 0 1 3.5 31V15A6.5 6.5 0 0 1 10 8.5Z" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><path d="M13.5 28.5v-11L24 26l10.5-8.5v11" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span><strong>Mostra aí</strong><small>Você está vendo uma transmissão</small>';
       const focus = document.createElement('button'); focus.type = 'button'; focus.className = 'tile-focus hidden'; focus.title = 'Destacar transmissão'; focus.setAttribute('aria-label', 'Destacar transmissão dentro do Mostra aí');
       focus.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/><path d="M9 9h6v6H9z"/></svg>';
       focus.addEventListener('click', function (event) { event.stopPropagation(); toggleTileFocus(tile); });

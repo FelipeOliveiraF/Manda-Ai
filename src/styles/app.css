@@ -329,6 +329,35 @@ body,
   box-shadow: 0 16px 35px #7449dc42;
 }
 
+/* Identidade Mostra aí — símbolo M em conversa */
+.brand-mark .mostra-ai-mark {
+  width: 26px;
+  height: 26px;
+  color: #fff;
+}
+
+[data-component="auth-screen"] .auth-emblem .mostra-ai-mark {
+  width: 43px;
+  height: 43px;
+  color: #fff;
+}
+
+[data-component="stage"] .empty-icon .mostra-ai-room-icon {
+  width: 42px;
+  height: 42px;
+}
+
+.header-room-avatar .mostra-ai-room-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.mostra-ai-chat-icon,
+.mostra-ai-room-icon,
+.mostra-ai-mark {
+  overflow: visible;
+}
+
 .auth-eyebrow {
   display: block;
   margin-bottom: 12px;

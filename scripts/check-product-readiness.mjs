@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
-const [auth, preferences, stage, runtime, runtimeHook, sounds, pwa, diagnostics, packager] = await Promise.all([
+const [auth, preferences, stage, runtime, runtimeHook, sounds, pwa, diagnostics, packager, brandIcons, brandAsset] = await Promise.all([
   readFile(resolve(root, "src/components/complementary/AuthScreen.tsx"), "utf8"),
   readFile(resolve(root, "src/components/complementary/PreferencesDialog.tsx"), "utf8"),
   readFile(resolve(root, "src/components/shell/Stage.tsx"), "utf8"),
@@ -14,6 +14,8 @@ const [auth, preferences, stage, runtime, runtimeHook, sounds, pwa, diagnostics,
   readFile(resolve(root, "src/services/pwa.ts"), "utf8"),
   readFile(resolve(root, "src/services/diagnostics.ts"), "utf8"),
   readFile(resolve(root, "scripts/package-react-worker.mjs"), "utf8"),
+  readFile(resolve(root, "src/components/brand/BrandIcons.tsx"), "utf8"),
+  readFile(resolve(root, "brand/mostra-ai-mark.svg"), "utf8"),
 ]);
 
 for (const marker of ["landing-copy", "landing-features", "landingInstallButton"]) assert.match(auth, new RegExp(marker));
@@ -28,6 +30,8 @@ assert.doesNotMatch(runtime, /preferCurrentTab\s*:\s*true/);
 assert.match(sounds, /setEnabled/); assert.match(sounds, /setVolume/);
 assert.match(pwa, /beforeinstallprompt/); assert.match(pwa, /appinstalled/);
 assert.match(diagnostics, /unhandledrejection/); assert.match(diagnostics, /sessionStorage/); assert.match(diagnostics, /client_diagnostics/); assert.match(diagnostics, /sentThisSession >= 10/);
-assert.match(packager, /caches\.open/); assert.match(packager, /shellAssets/); assert.match(packager, /mostra-ai-react-v4/); assert.match(packager, /strict-transport-security/);
+for (const marker of ["MostraAiMark", "MostraAiChatIcon", "MostraAiRoomIcon"]) assert.match(brandIcons, new RegExp(marker));
+assert.match(brandAsset, /aria-label="Mostra aí"/); assert.match(brandAsset, /mostra-ai-gradient/);
+assert.match(packager, /brand\/mostra-ai-mark\.svg/); assert.match(packager, /caches\.open/); assert.match(packager, /shellAssets/); assert.match(packager, /mostra-ai-react-v5/); assert.match(packager, /strict-transport-security/);
 
 console.log("PASS: commercial landing, preferences, PWA and call resilience are wired");
