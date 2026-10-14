@@ -8,6 +8,8 @@ export function MembersDialog() {
       <SettingsHeading icon={<UsersRound />} title="Membros da sala" description={<span id="memberSummary">Todas as pessoas que têm acesso aparecem aqui.</span>} />
       <div className="member-context"><ShieldCheck /><span>Administradores podem gerenciar cargos e permissões.</span></div>
       <div className="member-list" id="memberList" />
+      <section className="moderation-section hidden" id="bannedMembersSection"><div className="section-title"><strong>Acessos bloqueados</strong><small>Bloqueios temporários expiram automaticamente.</small></div><div className="member-list compact" id="bannedMemberList" /></section>
+      <section className="moderation-section hidden" id="moderationLogSection"><div className="section-title"><strong>Atividade administrativa</strong><small>Últimas ações realizadas nesta sala.</small></div><div className="moderation-log" id="moderationLog" /></section>
       <p className="form-error" id="manageRoomError" role="alert" />
     </div>
   </div>;

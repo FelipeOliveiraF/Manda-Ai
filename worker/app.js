@@ -9,6 +9,7 @@ export const appScript = String.raw`
   const THEME_KEY = 'mostra-theme';
   const THEME_IDS = ['purple','dark','light'];
   const RECENT_ROOMS_KEY = 'mostra-recent-rooms';
+  const SCREEN_QUALITY_KEY = 'mostra-screen-quality';
 
   function currentTheme() {
     const saved = localStorage.getItem(THEME_KEY);
@@ -78,8 +79,22 @@ export const appScript = String.raw`
   let reconnectAttempts = 0;
   let coordinatorRecoveryTimer = null;
   let coordinatorRecovering = false;
+  let callQualityTimer = null;
+  let qualityPreviousBytes = 0;
+  let qualityPreviousAt = 0;
+  let roomNotifications = new Map();
+  let unreadCounts = new Map();
+  let roomInboxChannel = null;
+  let touchGesture = null;
 
-  function playCallSound(event) { services.sounds.play(event); }
+  function notificationsMuted() { return Boolean(activeRoom && roomNotifications.get(activeRoom.id)); }
+  function playCallSound(event) { if (!notificationsMuted()) services.sounds.play(event); }
+  function haptic(pattern) { if (window.matchMedia('(max-width:720px)').matches && navigator.vibrate) navigator.vibrate(pattern); }
+  function showRoomNotice(message, important) {
+    if (notificationsMuted()) return;
+    showToast(message);
+    if (important) haptic([18, 35, 18]);
+  }
 
   function initials(name) {
     return String(name || 'Amigo').trim().split(/\s+/).slice(0, 2).map(function (part) { return part[0] || ''; }).join('').toUpperCase() || '?';
@@ -137,9 +152,53 @@ export const appScript = String.raw`
     const network = navigator.connection;
     const unstable = !navigator.onLine || network && (['slow-2g','2g'].includes(network.effectiveType) || network.rtt > 550 || network.downlink < 1);
     $('#connectionQuality').textContent = !navigator.onLine ? 'Offline' : unstable ? 'Instável' : healthy ? 'Boa' : 'Reconectando';
+    $('#headerConnectionQuality').textContent = $('#connectionQuality').textContent;
+    $('#connectionDetailsButton').dataset.quality = !navigator.onLine ? 'bad' : unstable ? 'fair' : healthy ? 'good' : 'checking';
     $('#networkStatus').textContent = !navigator.onLine ? 'Offline' : unstable ? 'Instável' : 'Online';
     $('#connectionStatusSummary').textContent = message;
   }
+
+  function qualityLabel(level) { return level === 'good' ? ['Boa', 'Conexão estável para áudio, vídeo e tela.'] : level === 'fair' ? ['Instável', 'Pode haver pequenas travadas ou perda de definição.'] : level === 'bad' ? ['Ruim', 'A chamada pode falhar. Tente reconectar ou reduzir a qualidade.'] : ['Verificando conexão', 'Os dados aparecem quando a mídia começa a circular.']; }
+  function renderCallQuality(metrics) {
+    const level = metrics.level || 'checking', labels = qualityLabel(level), overview = $('#qualityOverview');
+    overview.dataset.quality = level; $('#qualityTitle').textContent = labels[0]; $('#qualityDescription').textContent = labels[1];
+    $('#qualityRtt').textContent = Number.isFinite(metrics.rtt) ? Math.round(metrics.rtt) + ' ms' : '—';
+    $('#qualityLoss').textContent = Number.isFinite(metrics.loss) ? metrics.loss.toFixed(1) + '%' : '—';
+    $('#qualityJitter').textContent = Number.isFinite(metrics.jitter) ? Math.round(metrics.jitter) + ' ms' : '—';
+    $('#qualityBitrate').textContent = Number.isFinite(metrics.bitrate) ? (metrics.bitrate >= 1000 ? (metrics.bitrate / 1000).toFixed(1) + ' Mbps' : Math.round(metrics.bitrate) + ' Kbps') : '—';
+    $('#headerConnectionQuality').textContent = labels[0]; $('#connectionDetailsButton').dataset.quality = level;
+    $('#connectionTransport').textContent = metrics.transport || (activeRoom ? 'Conectando os participantes…' : 'Entre em uma sala para medir a conexão.');
+  }
+  async function collectCallQuality() {
+    if (!activeRoom) { renderCallQuality({ level: 'checking' }); return; }
+    const connections = [];
+    outgoingCalls.forEach(function (call) { if (call.peerConnection) connections.push(call.peerConnection); });
+    incomingCalls.forEach(function (call) { if (call.peerConnection) connections.push(call.peerConnection); });
+    if (!connections.length) {
+      const network = navigator.connection;
+      const poor = !navigator.onLine || network && (network.rtt > 550 || network.downlink < 1);
+      renderCallQuality({ level: poor ? 'bad' : 'checking', rtt: network?.rtt, bitrate: network?.downlink ? network.downlink * 1000 : NaN, transport: 'Aguardando mídia para completar o diagnóstico.' });
+      return;
+    }
+    let rtt = 0, rttCount = 0, lost = 0, received = 0, jitter = 0, jitterCount = 0, bytes = 0, relay = false;
+    for (const connection of connections) {
+      try {
+        const report = await connection.getStats();
+        report.forEach(function (stat) {
+          if (stat.type === 'candidate-pair' && stat.state === 'succeeded' && Number.isFinite(stat.currentRoundTripTime)) { rtt += stat.currentRoundTripTime * 1000; rttCount += 1; }
+          if (stat.type === 'inbound-rtp' && !stat.isRemote) { lost += Number(stat.packetsLost || 0); received += Number(stat.packetsReceived || 0); bytes += Number(stat.bytesReceived || 0); if (Number.isFinite(stat.jitter)) { jitter += stat.jitter * 1000; jitterCount += 1; } }
+          if ((stat.type === 'local-candidate' || stat.type === 'remote-candidate') && stat.candidateType === 'relay') relay = true;
+        });
+      } catch (_) {}
+    }
+    const now = performance.now(), bitrate = qualityPreviousAt && bytes >= qualityPreviousBytes ? ((bytes - qualityPreviousBytes) * 8 / Math.max(1, now - qualityPreviousAt)) : NaN;
+    qualityPreviousBytes = bytes; qualityPreviousAt = now;
+    const avgRtt = rttCount ? rtt / rttCount : NaN, loss = lost + received > 0 ? lost * 100 / (lost + received) : 0, avgJitter = jitterCount ? jitter / jitterCount : NaN;
+    const level = !navigator.onLine || loss > 8 || avgRtt > 650 || avgJitter > 80 ? 'bad' : loss > 2 || avgRtt > 280 || avgJitter > 35 ? 'fair' : 'good';
+    renderCallQuality({ level: level, rtt: avgRtt, loss: loss, jitter: avgJitter, bitrate: bitrate, transport: relay ? 'Conexão protegida por retransmissão (TURN).' : 'Conexão direta entre participantes.' });
+  }
+  function startCallQualityMonitor() { clearInterval(callQualityTimer); qualityPreviousBytes = 0; qualityPreviousAt = 0; collectCallQuality(); callQualityTimer = setInterval(collectCallQuality, 4000); }
+  function stopCallQualityMonitor() { clearInterval(callQualityTimer); callQualityTimer = null; qualityPreviousBytes = 0; qualityPreviousAt = 0; renderCallQuality({ level: 'checking' }); }
   function clearReconnect() { clearTimeout(reconnectTimer); reconnectTimer = null; reconnectAttempts = 0; }
   function clearCoordinatorRecovery() {
     clearTimeout(coordinatorRecoveryTimer); coordinatorRecoveryTimer = null; coordinatorRecovering = false; services.coordinatorRecovery.reset();
@@ -294,10 +353,65 @@ export const appScript = String.raw`
       const title = document.createElement('strong'); title.textContent = room.name;
       const code = document.createElement('small'); code.textContent = activeRoom?.id === room.id ? 'Na chamada' : 'Sala de conversa';
       copy.append(title, code); button.append(hash, copy);
+      const unread = roomUnreadTotal(room.id);
+      if (unread) { const badge = document.createElement('span'); badge.className = 'unread-badge room-unread'; badge.textContent = unread > 99 ? '99+' : String(unread); badge.setAttribute('aria-label', unread + ' mensagens não lidas'); button.appendChild(badge); }
       button.addEventListener('click', function () { openRoom(room); });
       list.appendChild(button);
     });
     renderHome();
+  }
+
+  function unreadKey(roomId, channelId) { return String(roomId) + ':' + String(channelId); }
+  function roomUnreadTotal(roomId) { let total = 0; unreadCounts.forEach(function (count, key) { if (key.startsWith(String(roomId) + ':')) total += Number(count || 0); }); return total; }
+  function renderUnreadBadges() {
+    renderRooms();
+    if (activeRoom) renderChannels();
+    const total = activeRoom ? roomUnreadTotal(activeRoom.id) : 0, badge = $('#chatUnreadBadge');
+    badge.textContent = total > 99 ? '99+' : String(total); badge.classList.toggle('hidden', !total);
+  }
+  async function loadNotificationState() {
+    if (!currentUser) return;
+    const [unreadResult, preferenceResult] = await Promise.all([
+      db.rpc('get_unread_counts'),
+      db.from('room_notification_preferences').select('room_id,muted').eq('user_id', currentUser.id)
+    ]);
+    unreadCounts.clear();
+    (unreadResult.data || []).forEach(function (item) { unreadCounts.set(unreadKey(item.room_id, item.channel_id), Number(item.unread_count || 0)); });
+    roomNotifications = new Map((preferenceResult.data || []).map(function (item) { return [item.room_id, Boolean(item.muted)]; }));
+    updateRoomNotificationButton(); renderUnreadBadges();
+  }
+  async function markActiveChannelRead() {
+    if (!activeRoom || !activeChannel) return;
+    const roomId = activeRoom.id, channelId = activeChannel.id;
+    unreadCounts.set(unreadKey(roomId, channelId), 0); renderUnreadBadges();
+    await db.rpc('mark_room_channel_read', { p_channel_id: channelId });
+  }
+  function subscribeRoomInbox() {
+    if (roomInboxChannel) db.removeChannel(roomInboxChannel);
+    roomInboxChannel = db.channel('room-inbox-' + currentUser.id)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'room_messages' }, function (payload) {
+        const message = payload.new || {};
+        if (message.user_id === currentUser.id) return;
+        const currentlyReading = activeRoom?.id === message.room_id && activeChannel?.id === message.channel_id && (!window.matchMedia('(max-width:980px)').matches || $('#chatPanel').classList.contains('open')) && document.visibilityState === 'visible';
+        if (currentlyReading) { markActiveChannelRead(); return; }
+        const key = unreadKey(message.room_id, message.channel_id); unreadCounts.set(key, Number(unreadCounts.get(key) || 0) + 1); renderUnreadBadges();
+        const room = rooms.find(function (item) { return item.id === message.room_id; });
+        if (!roomNotifications.get(message.room_id)) {
+          showToast('Nova mensagem em ' + (room?.name || 'uma sala') + '.');
+          haptic('notice');
+        }
+      }).subscribe();
+  }
+  function updateRoomNotificationButton() {
+    const button = $('#roomNotificationsButton'); if (!button) return;
+    const muted = notificationsMuted(); button.classList.toggle('muted', muted); button.setAttribute('aria-pressed', String(!muted)); button.setAttribute('aria-label', muted ? 'Ativar notificações desta sala' : 'Silenciar notificações desta sala'); button.title = button.getAttribute('aria-label');
+  }
+  async function toggleRoomNotifications() {
+    if (!activeRoom) return;
+    const muted = !notificationsMuted(); roomNotifications.set(activeRoom.id, muted); updateRoomNotificationButton();
+    const result = await db.from('room_notification_preferences').upsert({ user_id: currentUser.id, room_id: activeRoom.id, muted: muted, updated_at: new Date().toISOString() });
+    if (result.error) { roomNotifications.set(activeRoom.id, !muted); updateRoomNotificationButton(); showToast('Não consegui salvar esta preferência.'); return; }
+    showToast(muted ? 'Notificações desta sala silenciadas.' : 'Notificações desta sala ativadas.');
   }
 
   async function handleHomeJoin(event) {
@@ -328,7 +442,7 @@ export const appScript = String.raw`
     const result = await db.from('rooms').select('id,code,name,owner_id,media_key,avatar_url,created_at').order('created_at', { ascending: false });
     if (result.error) { showToast('Não consegui carregar suas salas.'); return; }
     rooms = result.data || [];
-    renderRooms();
+    await loadNotificationState(); subscribeRoomInbox(); renderRooms();
     if (preferredId) {
       const preferred = rooms.find(function (room) { return room.id === preferredId; });
       if (preferred) await openRoom(preferred);
@@ -359,9 +473,9 @@ export const appScript = String.raw`
   }
   async function createInvite() {
     if (!activeRoom) return;
-    const button = $('#generateInvite'), expiryValue = $('#inviteExpiry').value;
+    const button = $('#generateInvite'), expiryValue = $('#inviteExpiry').value, maxUsesValue = $('#inviteMaxUses').value;
     button.disabled = true; button.textContent = 'Gerando…'; $('#inviteManageError').textContent = '';
-    const result = await db.rpc('create_room_invite_with_expiry', { p_room_id: activeRoom.id, p_expires_in_hours: expiryValue ? Number(expiryValue) : null });
+    const result = await db.rpc('create_room_invite_managed', { p_room_id: activeRoom.id, p_expires_in_hours: expiryValue ? Number(expiryValue) : null, p_max_uses: maxUsesValue ? Number(maxUsesValue) : null });
     button.disabled = false; button.textContent = 'Gerar convite';
     const invite = Array.isArray(result.data) ? result.data[0] : result.data;
     if (result.error || !invite?.token) { $('#inviteManageError').textContent = 'Não consegui criar o convite.'; return; }
@@ -379,11 +493,12 @@ export const appScript = String.raw`
       const row = document.createElement('article'); row.className = 'invite-row';
       const copy = document.createElement('div');
       const title = document.createElement('strong');
-      const expired = invite.expires_at && new Date(invite.expires_at) <= new Date(), revoked = Boolean(invite.revoked_at);
-      title.textContent = revoked ? 'Revogado' : expired ? 'Expirado' : 'Ativo'; title.className = revoked || expired ? 'inactive' : 'active';
-      const detail = document.createElement('small'); detail.textContent = 'Criado por ' + (invite.creator_name || 'Amigo') + ' · ' + invite.use_count + (invite.use_count === 1 ? ' uso' : ' usos') + (invite.expires_at ? ' · vence ' + new Date(invite.expires_at).toLocaleDateString('pt-BR') : ' · sem expiração');
+      const expired = invite.expires_at && new Date(invite.expires_at) <= new Date(), exhausted = invite.max_uses && invite.use_count >= invite.max_uses, revoked = Boolean(invite.revoked_at);
+      title.textContent = revoked ? 'Revogado' : expired ? 'Expirado' : exhausted ? 'Limite atingido' : 'Ativo'; title.className = revoked || expired || exhausted ? 'inactive' : 'active';
+      const useLimit = invite.max_uses ? ' de ' + invite.max_uses : '';
+      const detail = document.createElement('small'); detail.textContent = 'Criado por ' + (invite.creator_name || 'Amigo') + ' · ' + invite.use_count + useLimit + (invite.use_count === 1 ? ' uso' : ' usos') + (invite.expires_at ? ' · vence ' + new Date(invite.expires_at).toLocaleDateString('pt-BR') : ' · sem expiração');
       copy.append(title, detail); row.append(copy);
-      if (!revoked && !expired) { const revoke = document.createElement('button'); revoke.type = 'button'; revoke.className = 'secondary-button danger-outline'; revoke.textContent = 'Revogar'; revoke.addEventListener('click', function () { revokeInvite(invite.id); }); row.append(revoke); }
+      if (!revoked && !expired && !exhausted) { const revoke = document.createElement('button'); revoke.type = 'button'; revoke.className = 'secondary-button danger-outline'; revoke.textContent = 'Revogar'; revoke.addEventListener('click', function () { revokeInvite(invite.id); }); row.append(revoke); }
       list.appendChild(row);
     });
     if (!result.data?.length) list.innerHTML = '<p class="form-help">Nenhum convite criado ainda.</p>';
@@ -429,6 +544,7 @@ export const appScript = String.raw`
     const reactions = ids.length ? await db.from('room_message_reactions').select('id,message_id,user_id,emoji').eq('channel_id', channelId).in('message_id', ids) : { data: [] };
     if (!activeRoom || activeRoom.id !== roomId || !activeChannel || activeChannel.id !== channelId) return;
     renderMessages(result.data || [], reactions.data || []);
+    if (!window.matchMedia('(max-width:980px)').matches || $('#chatPanel').classList.contains('open')) markActiveChannelRead();
   }
   function messageAuthor(item) {
     const profile = item.profiles || {}, membership = roomMembers.get(item.user_id);
@@ -520,7 +636,9 @@ export const appScript = String.raw`
     const tabs = $('#channelTabs'); tabs.textContent = '';
     roomChannels.forEach(function (channel) {
       const button = document.createElement('button'); button.type = 'button'; button.className = 'channel-tab' + (activeChannel?.id === channel.id ? ' active' : '');
-      button.textContent = '# ' + channel.name; button.title = 'Abrir #' + channel.name;
+      const name = document.createElement('span'); name.textContent = '# ' + channel.name; button.appendChild(name); button.title = 'Abrir #' + channel.name;
+      const unread = Number(unreadCounts.get(unreadKey(channel.room_id, channel.id)) || 0);
+      if (unread) { const badge = document.createElement('b'); badge.className = 'unread-badge'; badge.textContent = unread > 99 ? '99+' : String(unread); button.appendChild(badge); }
       button.addEventListener('click', function () { selectChannel(channel); });
       tabs.appendChild(button);
     });
@@ -541,7 +659,7 @@ export const appScript = String.raw`
     clearReply();
     $('#activeChannelName').textContent = '# ' + channel.name;
     $('#messageInput').placeholder = 'Mensagem em #' + channel.name;
-    renderChannels(); subscribeChat();
+    unreadCounts.set(unreadKey(channel.room_id, channel.id), 0); renderChannels(); subscribeChat();
   }
   async function loadChannels(preferredId) {
     if (!activeRoom) return;
@@ -685,6 +803,9 @@ export const appScript = String.raw`
       const fullscreen = document.createElement('button'); fullscreen.type = 'button'; fullscreen.className = 'tile-fullscreen hidden';
       fullscreen.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>';
       fullscreen.addEventListener('click', function (event) { event.stopPropagation(); toggleTileFullscreen(tile); });
+      const pip = document.createElement('button'); pip.type = 'button'; pip.className = 'tile-pip hidden'; pip.title = 'Assistir em miniatura'; pip.setAttribute('aria-label', 'Abrir transmissão em picture-in-picture');
+      pip.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="12" y="11" width="7" height="5" rx="1"/></svg>';
+      pip.addEventListener('click', async function (event) { event.stopPropagation(); try { if (document.pictureInPictureElement === video) await document.exitPictureInPicture(); else await video.requestPictureInPicture(); haptic(16); } catch (_) { showToast('Picture-in-picture não está disponível neste navegador.'); } });
       slider.addEventListener('input', function () {
         video.volume = Number(slider.value); video.muted = false; tile.dataset.audioMuted = 'false';
         if (video.volume > 0) tile.dataset.lastVolume = slider.value;
@@ -707,7 +828,7 @@ export const appScript = String.raw`
         mute.setAttribute('aria-label', video.muted ? 'Reativar áudio' : 'Silenciar áudio');
         video.play().catch(function () {});
       });
-      volume.append(mute, slider, amount); tile.append(avatar, video, meta, volume, brand, focus, fullscreen); $('#mediaGrid').appendChild(tile);
+      volume.append(mute, slider, amount); tile.append(avatar, video, meta, volume, brand, focus, fullscreen, pip); $('#mediaGrid').appendChild(tile);
     }
     setAvatar(tile.querySelector('.tile-avatar span'), name, local ? avatarUrl() : memberProfiles.get(peerUserIds.get(peerId))?.avatar_url || '');
     tile.querySelector('.tile-name').textContent = name + (local ? ' (você)' : '');
@@ -715,12 +836,13 @@ export const appScript = String.raw`
     tile.classList.toggle('screen-share', kind === 'screen');
     const video = tile.querySelector('video'); const avatar = tile.querySelector('.tile-avatar');
     const volume = tile.querySelector('.tile-volume'); const slider = tile.querySelector('.tile-volume-range'); const mute = tile.querySelector('.tile-mute');
-    const fullscreen = tile.querySelector('.tile-fullscreen'); const focus = tile.querySelector('.tile-focus');
+    const fullscreen = tile.querySelector('.tile-fullscreen'); const focus = tile.querySelector('.tile-focus'); const pip = tile.querySelector('.tile-pip');
     const hasVideo = Boolean(stream && stream.getVideoTracks().some(function (track) { return track.readyState === 'live'; }));
     const hasAudio = Boolean(stream && stream.getAudioTracks().some(function (track) { return track.readyState === 'live'; }));
     volume.classList.toggle('hidden', local || !hasAudio);
     fullscreen.classList.toggle('hidden', !hasVideo);
     focus.classList.toggle('hidden', !hasVideo);
+    pip.classList.toggle('hidden', local || !hasVideo || !document.pictureInPictureEnabled || typeof video.requestPictureInPicture !== 'function');
     if (!hasVideo && tile.classList.contains('focused')) toggleTileFocus(tile);
     slider.setAttribute('aria-label', 'Volume do áudio de ' + name);
     if (stream && stream.getTracks().length) {
@@ -797,7 +919,7 @@ export const appScript = String.raw`
     incomingCalls.set(call.peer, call); call.answer();
     call.on('stream', function (stream) {
       const previousKind = remoteKinds.get(call.peer); const nextKind = call.metadata && call.metadata.kind || (stream.getVideoTracks().length ? 'camera' : 'audio');
-      remoteStreams.set(call.peer, stream); remoteKinds.set(call.peer, nextKind); if (nextKind === 'screen' && previousKind !== 'screen') playCallSound('shareStart');
+      remoteStreams.set(call.peer, stream); remoteKinds.set(call.peer, nextKind); if (nextKind === 'screen' && previousKind !== 'screen') { playCallSound('shareStart'); showRoomNotice((roster.get(call.peer) || call.metadata?.name || 'Alguém') + ' começou a compartilhar a tela.', true); }
       ensureTile(call.peer, roster.get(call.peer) || call.metadata && call.metadata.name || 'Amigo', stream, remoteKinds.get(call.peer), false);
     });
     call.on('close', function () { if (incomingCalls.get(call.peer) === call) { if (remoteKinds.get(call.peer) === 'screen' && !leaving) playCallSound('shareStop'); incomingCalls.delete(call.peer); remoteStreams.delete(call.peer); remoteKinds.delete(call.peer); renderRoster(); } });
@@ -812,12 +934,12 @@ export const appScript = String.raw`
     clearCoordinatorRecovery(); isCoordinator = true; peer = targetPeer; roster.set(peer.id, roomUserName()); peerUserIds.set(peer.id,currentUser.id); setConnection('Sala conectada', true); broadcastRoster();
     peer.on('connection', function (connection) {
       dataConnections.set(connection.peer, connection); if(connection.metadata?.userId) peerUserIds.set(connection.peer,connection.metadata.userId);
-      connection.on('open', function () { roster.set(connection.peer, String(connection.metadata && connection.metadata.nickname || 'Amigo').slice(0, 60)); playCallSound('participantJoin'); broadcastRoster(); });
+      connection.on('open', function () { const joinedName = String(connection.metadata && connection.metadata.nickname || 'Amigo').slice(0, 60); roster.set(connection.peer, joinedName); playCallSound('participantJoin'); showRoomNotice(joinedName + ' entrou na chamada.', false); broadcastRoster(); });
       connection.on('data', function (data) {
         if (data && data.type === 'intro') { roster.set(connection.peer, String(data.nickname || 'Amigo').slice(0, 60)); broadcastRoster(); }
         else if (data && data.type === 'gesture') relayGesture({ emoji: data.emoji, name: roster.get(connection.peer) || 'Amigo' });
       });
-      connection.on('close', function () { dataConnections.delete(connection.peer); roster.delete(connection.peer); remoteStreams.delete(connection.peer); remoteKinds.delete(connection.peer); if (!leaving) playCallSound('participantLeave'); broadcastRoster(); });
+      connection.on('close', function () { const departedName = roster.get(connection.peer) || 'Alguém'; dataConnections.delete(connection.peer); roster.delete(connection.peer); remoteStreams.delete(connection.peer); remoteKinds.delete(connection.peer); if (!leaving) { playCallSound('participantLeave'); showRoomNotice(departedName + ' saiu da chamada.', false); } broadcastRoster(); });
     });
   }
   function resetPeerTransport() {
@@ -941,9 +1063,15 @@ export const appScript = String.raw`
     return 'Não foi possível iniciar o compartilhamento de tela. Tente novamente.';
   }
   async function requestDisplayMedia() {
+    const quality = localStorage.getItem(SCREEN_QUALITY_KEY) || 'auto';
+    const video = quality === '1080'
+      ? { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 60 }, displaySurface: 'browser' }
+      : quality === '720'
+        ? { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24, max: 30 }, displaySurface: 'browser' }
+        : { frameRate: { ideal: 30, max: 60 }, displaySurface: 'browser' };
     try {
       return await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: 30, max: 60 }, displaySurface: 'browser' },
+        video: video,
         audio: { suppressLocalAudioPlayback: false },
         selfBrowserSurface: 'exclude',
         surfaceSwitching: 'include',
@@ -1046,6 +1174,7 @@ export const appScript = String.raw`
     $('.room-layout').classList.remove('home-mode'); $('#emptyStage').classList.add('hidden'); $('#mediaStage').classList.remove('hidden'); $('#mediaControls').classList.remove('hidden');
     $('#roomTitle').textContent = room.name; $('#roomSubtitle').textContent = 'Sala ' + room.code; $('#chatRoomName').textContent = room.name;
     $('#participantCount').classList.remove('hidden'); $('#inviteButton').classList.remove('hidden'); $('#toggleChat').classList.remove('hidden');
+    $('#connectionDetailsButton').classList.remove('hidden'); $('#roomNotificationsButton').classList.remove('hidden'); updateRoomNotificationButton(); startCallQualityMonitor(); haptic(18);
     $('#inviteButton').disabled = false; $('#messageInput').disabled = true; $('#sendMessage').disabled = true; $('#messageInput').placeholder = 'Carregando chats…';
     setMobileSidebar(false); setConnection('Conectando à sala…', false);
     if (!await loadRoomMembers()) return;
@@ -1056,6 +1185,7 @@ export const appScript = String.raw`
   function leaveActiveRoom() {
     if (activeRoom) playCallSound('leave');
     cleanupPeer(); stopRoomControls();
+    stopCallQualityMonitor();
     activeRoom = null; activeMembership = null; roomMembers.clear(); roomChannels = []; activeChannel = null; renderRooms(); resetChat(); renderChannels();
     $('#roomSettingsButton').classList.add('hidden'); $('#manageRoomButton').classList.add('hidden'); $('#roomIdentityButton').classList.add('hidden'); $('#clearChannel').classList.add('hidden'); $('#headerRoomAvatar').style.backgroundImage=''; $('#headerRoomAvatar').textContent='M';
     $('.room-layout').classList.add('home-mode'); $('.room-layout').classList.remove('chat-hidden'); $('#chatPanel').classList.remove('open');
@@ -1063,6 +1193,7 @@ export const appScript = String.raw`
     $('#emptyStage').classList.remove('hidden'); $('#mediaStage').classList.add('hidden'); $('#mediaControls').classList.add('hidden');
     $('#roomTitle').textContent = 'Início'; $('#roomSubtitle').textContent = 'Salas, convites e atalhos'; $('#chatRoomName').textContent = 'Selecione uma sala'; $('#activeChannelName').textContent = 'Conversa'; $('#participantCount').textContent = '0 online';
     $('#participantCount').classList.add('hidden'); $('#inviteButton').classList.add('hidden'); $('#toggleChat').classList.add('hidden');
+    $('#connectionDetailsButton').classList.add('hidden'); $('#roomNotificationsButton').classList.add('hidden'); $('#chatUnreadBadge').classList.add('hidden');
     $('#inviteButton').disabled = true; $('#messageInput').disabled = true; $('#sendMessage').disabled = true; $('#messageInput').placeholder = 'Escolha uma sala para conversar'; renderHome();
   }
 
@@ -1103,7 +1234,7 @@ export const appScript = String.raw`
     if (pendingInvite) await loadInvitePreview();
   }
   async function bootSignedOut() {
-    currentUser = null; ownProfile=null; stopPreviews(); stopPrejoin(); stopRoomControls(); resetChat(); document.querySelectorAll('.modal-backdrop').forEach(m=>m.classList.add('hidden')); cleanupPeer(); activeRoom = null; $('#app').classList.add('hidden'); $('#authScreen').classList.remove('hidden'); await loadInvitePreview(); await initGoogleButton();
+    currentUser = null; ownProfile=null; stopPreviews(); stopPrejoin(); stopRoomControls(); stopCallQualityMonitor(); if (roomInboxChannel) db.removeChannel(roomInboxChannel); roomInboxChannel = null; resetChat(); document.querySelectorAll('.modal-backdrop').forEach(m=>m.classList.add('hidden')); cleanupPeer(); activeRoom = null; $('#app').classList.add('hidden'); $('#authScreen').classList.remove('hidden'); await loadInvitePreview(); await initGoogleButton();
   }
   function handleSession(session) {
     const user = session && session.user;
@@ -1148,12 +1279,25 @@ export const appScript = String.raw`
       const open = typeof force==='boolean' ? force : !$('#chatPanel').classList.contains('open');
       $('.room-layout').classList.remove('chat-hidden'); $('#chatPanel').classList.toggle('open',open); $('#toggleChat').setAttribute('aria-pressed',String(open));
       document.documentElement.classList.toggle('mobile-chat-open', open);
+      if (open) markActiveChannelRead();
     } else {
       const open = typeof force==='boolean' ? force : $('.room-layout').classList.contains('chat-hidden');
       $('.room-layout').classList.toggle('chat-hidden',!open); $('#toggleChat').setAttribute('aria-pressed',String(open));
     }
   }
+  async function retryConnectionNow() {
+    if (!activeRoom) { showToast('Entre em uma sala para testar a conexão.'); return; }
+    closeModal('connectionDetailsModal'); setConnection('Reconectando manualmente…', false); haptic([18, 25, 18]);
+    clearReconnect(); clearCoordinatorRecovery();
+    if (isCoordinator && peer && !peer.destroyed) { try { if (peer.disconnected) peer.reconnect(); } catch (_) {} setTimeout(collectCallQuality, 1200); showToast('Conexão verificada.'); return; }
+    resetPeerTransport(); setTimeout(joinCoordinator, 180); showToast('Reconectando à chamada…');
+  }
   $('#toggleChat').addEventListener('click', function () { toggleChat(); }); $('#closeChat').addEventListener('click', function () { toggleChat(false); });
+  $('#connectionDetailsButton').addEventListener('click', function () { collectCallQuality(); openModal('connectionDetailsModal'); });
+  $('#retryConnection').addEventListener('click', retryConnectionNow);
+  $('#roomNotificationsButton').addEventListener('click', toggleRoomNotifications);
+  $('#screenQualitySelect').value = localStorage.getItem(SCREEN_QUALITY_KEY) || 'auto';
+  $('#screenQualitySelect').addEventListener('change', function () { localStorage.setItem(SCREEN_QUALITY_KEY, $('#screenQualitySelect').value); showToast('Qualidade do compartilhamento salva.'); });
   window.addEventListener('keydown', function (event) {
     if (event.key !== 'Escape' || !window.matchMedia('(max-width:720px)').matches) return;
     if ($('#sidebar').classList.contains('open')) setMobileSidebar(false);
@@ -1284,10 +1428,32 @@ export const appScript = String.raw`
         screen.addEventListener('click', function () { setMemberControls(member, member.is_muted, !member.can_share_screen); });
         const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'member-action danger'; remove.textContent = 'Remover';
         remove.addEventListener('click', function () { removeMember(member); });
-        actions.append(mute, screen, remove);
+        const ban = document.createElement('button'); ban.type = 'button'; ban.className = 'member-action danger'; ban.textContent = 'Bloquear';
+        ban.addEventListener('click', function () { banMember(member); });
+        actions.append(mute, screen, remove, ban);
       }
       row.append(actions); list.appendChild(row);
     });
+  }
+  async function loadModerationData() {
+    const bannedSection = $('#bannedMembersSection'), logSection = $('#moderationLogSection');
+    bannedSection.classList.toggle('hidden', !isRoomAdmin()); logSection.classList.toggle('hidden', !isRoomAdmin());
+    if (!activeRoom || !isRoomAdmin()) return;
+    const roomId = activeRoom.id;
+    const [bansResult, logResult] = await Promise.all([db.rpc('list_room_bans', { p_room_id: roomId }), db.rpc('list_room_moderation_events', { p_room_id: roomId })]);
+    if (!activeRoom || activeRoom.id !== roomId) return;
+    const bannedList = $('#bannedMemberList'); bannedList.textContent = '';
+    (bansResult.data || []).forEach(function (ban) {
+      const row = document.createElement('article'); row.className = 'member-row compact';
+      const copy = document.createElement('div'); copy.className = 'member-person-copy';
+      const title = document.createElement('strong'); title.textContent = ban.display_name || 'Pessoa bloqueada';
+      const detail = document.createElement('small'); detail.textContent = ban.banned_until ? 'Bloqueado até ' + new Date(ban.banned_until).toLocaleString('pt-BR') : 'Bloqueio permanente';
+      copy.append(title, detail); const release = document.createElement('button'); release.type = 'button'; release.className = 'secondary-button'; release.textContent = 'Desbloquear'; release.addEventListener('click', function () { unbanMember(ban.user_id, title.textContent); }); row.append(copy, release); bannedList.appendChild(row);
+    });
+    if (!bansResult.data?.length) bannedList.innerHTML = '<p class="form-help">Nenhum acesso bloqueado.</p>';
+    const log = $('#moderationLog'); log.textContent = '';
+    (logResult.data || []).forEach(function (event) { const row = document.createElement('article'); const title = document.createElement('strong'); title.textContent = event.summary; const meta = document.createElement('small'); meta.textContent = new Date(event.created_at).toLocaleString('pt-BR') + ' · por ' + (event.actor_name || 'Administrador'); row.append(title, meta); log.appendChild(row); });
+    if (!logResult.data?.length) log.innerHTML = '<p class="form-help">Nenhuma ação administrativa registrada.</p>';
   }
   async function saveRoomNickname(event) {
     event.preventDefault();
@@ -1303,11 +1469,14 @@ export const appScript = String.raw`
     closeModal('roomIdentityModal'); showToast('Seu nome nesta sala foi atualizado.');
   }
   async function setMemberRole(member, role) {
+    if (!confirm((role === 'admin' ? 'Tornar ' + member.display_name + ' administrador?' : 'Remover o cargo de administrador de ' + member.display_name + '?'))) return;
     const result = await db.rpc('set_room_member_role', { p_room_id: activeRoom.id, p_user_id: member.user_id, p_role: role });
     if (result.error) { showToast('Não consegui alterar este cargo.'); return; }
     await loadRoomMembers(); showToast(role === 'admin' ? 'Administrador adicionado.' : 'Cargo de administrador removido.');
   }
   async function setMemberControls(member, isMuted, canShareScreen) {
+    const action = isMuted !== member.is_muted ? (isMuted ? 'silenciar o microfone de ' : 'liberar o microfone de ') : (canShareScreen ? 'liberar o compartilhamento de ' : 'bloquear o compartilhamento de ');
+    if (!confirm('Deseja ' + action + member.display_name + '?')) return;
     const result = await db.rpc('set_room_member_controls', { p_room_id: activeRoom.id, p_user_id: member.user_id, p_is_muted: isMuted, p_can_share_screen: canShareScreen });
     if (result.error) { showToast('Não consegui aplicar esta ação.'); return; }
     await loadRoomMembers(); showToast('Permissões atualizadas.');
@@ -1318,10 +1487,28 @@ export const appScript = String.raw`
     if (result.error) { showToast('Não consegui remover esta pessoa.'); return; }
     await loadRoomMembers(); showToast('Pessoa removida da sala.');
   }
+  async function banMember(member) {
+    const duration = prompt('Por quantas horas? Deixe vazio para bloqueio permanente.', '24');
+    if (duration === null) return;
+    const hours = duration.trim() ? Number(duration) : null;
+    if (hours !== null && (!Number.isFinite(hours) || hours < 1 || hours > 8760)) { showToast('Use um período entre 1 hora e 1 ano.'); return; }
+    const reason = prompt('Motivo do bloqueio (opcional):', '') ?? '';
+    if (!confirm('Bloquear ' + member.display_name + (hours ? ' por ' + hours + ' hora(s)' : ' permanentemente') + '? A pessoa será removida da sala.')) return;
+    const result = await db.rpc('ban_room_member', { p_room_id: activeRoom.id, p_user_id: member.user_id, p_duration_hours: hours, p_reason: reason.trim() || null });
+    if (result.error) { showToast('Não consegui bloquear esta pessoa.'); return; }
+    await loadRoomMembers(); await loadModerationData(); showToast('Acesso bloqueado.');
+  }
+  async function unbanMember(userId, name) {
+    if (!confirm('Desbloquear ' + name + '? A pessoa ainda precisará de um convite para voltar.')) return;
+    const result = await db.rpc('unban_room_member', { p_room_id: activeRoom.id, p_user_id: userId });
+    if (result.error) { showToast('Não consegui desbloquear esta pessoa.'); return; }
+    await loadModerationData(); showToast('Acesso desbloqueado.');
+  }
   function updateRoomHeading() {
     if(!activeRoom)return;
     setAvatar($('#headerRoomAvatar'),activeRoom.name,activeRoom.avatar_url);
     $('#roomSettingsButton').classList.toggle('hidden',activeRoom.owner_id!==currentUser.id);
+    $('#roomNotificationsButton').classList.toggle('hidden',!activeMembership); $('#connectionDetailsButton').classList.toggle('hidden',!activeMembership); updateRoomNotificationButton();
     $('#manageRoomButton').classList.toggle('hidden',!activeMembership);
     $('#roomIdentityButton').classList.toggle('hidden',!activeMembership);
     $('#roomIdentityName').textContent=roomUserName();$('#roomIdentityRole').textContent=roleLabel(activeMembership?.role);setAvatar($('#roomIdentityAvatar'),roomUserName(),ownProfile?.avatar_url||'');
@@ -1472,7 +1659,7 @@ export const appScript = String.raw`
   services.pwa.subscribe(syncPreferences);
   $('#roomSettingsButton').addEventListener('click',editRoom);
   $('#roomIdentityButton').addEventListener('click',()=>{if(!activeMembership)return;$('#roomNicknameInput').value=roomUserName();$('#roomIdentityError').textContent='';openModal('roomIdentityModal');});
-  $('#manageRoomButton').addEventListener('click',()=>{renderMemberManagement();$('#manageRoomError').textContent='';openModal('manageRoomModal');});
+  $('#manageRoomButton').addEventListener('click',()=>{renderMemberManagement();loadModerationData();$('#manageRoomError').textContent='';openModal('manageRoomModal');});
   $('#profilePhoto').addEventListener('change',e=>choosePhoto('profile',e.target));$('#roomPhoto').addEventListener('change',e=>choosePhoto('room',e.target));
   $('#removeProfilePhoto').addEventListener('click',()=>{resetDraft('profile');profileDraftPhoto=null;setAvatar($('#profilePhotoPreview'),userName(),'');});
   $('#removeRoomPhoto').addEventListener('click',()=>{resetDraft('room');roomDraftPhoto=null;setAvatar($('#roomPhotoPreview'),activeRoom.name,'');});
@@ -1485,6 +1672,19 @@ export const appScript = String.raw`
   window.addEventListener('offline',function(){showToast('Você ficou sem internet. Suas ações serão retomadas quando a conexão voltar.');if(activeRoom)setConnection('Sem internet. A chamada será retomada automaticamente.',false);else syncPreferences();});
   window.addEventListener('online',function(){showToast(activeRoom?'Internet voltou. Reconectando a chamada…':'Internet voltou. Você já pode continuar.');if(activeRoom){setConnection('Internet voltou. Reconectando…',false);scheduleReconnect(peer);}else syncPreferences();});
   navigator.connection?.addEventListener?.('change',function(){if(activeRoom)setConnection($('#connectionNote span').textContent,$('#connectionNote').dataset.state==='healthy');else syncPreferences();});
+  document.addEventListener('pointerdown', function (event) {
+    if (event.pointerType !== 'touch' || !window.matchMedia('(max-width:720px)').matches) return;
+    touchGesture = { x: event.clientX, y: event.clientY, edge: event.clientX <= 28 };
+  }, { passive: true });
+  document.addEventListener('pointerup', function (event) {
+    if (!touchGesture || event.pointerType !== 'touch') return;
+    const start = touchGesture; touchGesture = null; const dx = event.clientX - start.x, dy = event.clientY - start.y;
+    if (Math.abs(dx) < 65 || Math.abs(dx) < Math.abs(dy) * 1.35) return;
+    if (start.edge && dx > 0) { setMobileSidebar(true); haptic(10); }
+    else if ($('#sidebar').classList.contains('open') && dx < 0) { setMobileSidebar(false); haptic(10); }
+    else if ($('#chatPanel').classList.contains('open') && dx > 0) { toggleChat(false); haptic(10); }
+  }, { passive: true });
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') markActiveChannelRead(); });
   document.addEventListener('keydown',event=>{
     const modal=Array.from(document.querySelectorAll('.modal-backdrop')).find(m=>!m.classList.contains('hidden'));if(!modal)return;
     if(event.key==='Escape'&&modal.id!=='acceptInviteModal'){closeModal(modal.id);return;}

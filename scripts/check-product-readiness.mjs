@@ -38,7 +38,8 @@ for (const marker of ["mostra-theme", "purple", "dark", "light", "colorScheme"])
 for (const marker of ["saveThemePreference", "mostra:theme-change"]) assert.match(theme, new RegExp(marker));
 for (const marker of ["THEME_IDS", "data-theme-choice", "setTheme", "currentTheme"]) assert.match(runtime, new RegExp(marker));
 for (const marker of ["user_preferences", "mostra:theme-change", "preferenceResult.data?.theme"]) assert.match(runtime, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+for (const marker of ["getStats", "get_unread_counts", "mark_room_channel_read", "create_room_invite_managed", "ban_room_member", "requestPictureInPicture", "navigator.vibrate"]) assert.match(runtime, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 assert.match(packager, /brand\/mostra-ai-mark\.svg/); assert.match(packager, /caches\.open/); assert.match(packager, /shellAssets/); assert.match(packager, /mostra-ai-react-v6/); assert.match(packager, /strict-transport-security/);
 assert.match(packager, /grupo-dos-amigos-tela\.flof0\.chatgpt\.site/); assert.match(packager, /https:\/\/mostraai\.online/); assert.match(packager, /Response\.redirect/); assert.match(packager, /308/);
 
-console.log("PASS: commercial landing, preferences, PWA and call resilience are wired");
+console.log("PASS: commercial landing, preferences, PWA, call resilience, notifications and moderation are wired");

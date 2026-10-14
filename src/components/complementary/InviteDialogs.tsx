@@ -10,6 +10,8 @@ export function InviteDialogs() {
         <div className="invite-create-row">
           <label htmlFor="inviteExpiry">Validade do link</label>
           <select id="inviteExpiry" defaultValue="168"><option value="24">24 horas</option><option value="168">7 dias</option><option value="720">30 dias</option><option value="">Sem expiração</option></select>
+          <label htmlFor="inviteMaxUses">Limite de entradas</label>
+          <select id="inviteMaxUses" defaultValue=""><option value="1">Uso único</option><option value="5">Até 5 entradas</option><option value="20">Até 20 entradas</option><option value="">Sem limite</option></select>
           <button className="primary-button" id="generateInvite" type="button"><Plus /> Gerar convite</button>
         </div>
         <div className="invite-link-result hidden" id="inviteLinkResult">
