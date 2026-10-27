@@ -40,6 +40,16 @@ async function start() {
       if (name) name.value = "Felipe";
     }
     if (previewModal) document.getElementById(previewModal)?.classList.remove("hidden");
+    if (previewModal === "chessModal" && previewParams.has("chess-game-preview")) {
+      document.getElementById("chessLobby")?.classList.add("hidden");
+      document.getElementById("chessGameView")?.classList.remove("hidden");
+      const white = document.getElementById("chessWhiteName");
+      const black = document.getElementById("chessBlackName");
+      const status = document.getElementById("chessGameStatus");
+      if (white) white.textContent = "Felipe";
+      if (black) black.textContent = "Amigo";
+      if (status) status.textContent = "Sua vez";
+    }
     return;
   }
 }

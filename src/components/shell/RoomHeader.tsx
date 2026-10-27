@@ -19,6 +19,7 @@ export function RoomHeader() {
         <button className="square-button hidden" id="manageRoomButton" title="Ver membros da sala" aria-label="Ver membros da sala"><Users /></button>
         <button className="square-button hidden" id="roomSettingsButton" title="Personalizar sala" aria-label="Personalizar sala"><Settings /></button>
         <button className="square-button hidden" id="roomNotificationsButton" title="Silenciar notificações desta sala" aria-label="Silenciar notificações desta sala" aria-pressed="true"><Bell /></button>
+        <button className="square-button chess-header-button hidden" id="chessButton" title="Abrir xadrez da sala" aria-label="Abrir xadrez da sala"><span aria-hidden="true">♞</span><span className="unread-badge hidden" id="chessBadge">0</span></button>
         <button className="header-button hidden" id="inviteButton" aria-label="Convidar pessoas" disabled><UserRoundPlus /><span>Convidar</span></button>
         <button className="square-button chat-toggle hidden" id="toggleChat" title="Abrir ou fechar chat" aria-label="Abrir ou fechar chat" aria-pressed="true"><MostraAiChatIcon /><span className="unread-badge hidden" id="chatUnreadBadge">0</span></button>
       </div>

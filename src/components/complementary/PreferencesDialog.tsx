@@ -32,7 +32,7 @@ export function PreferencesDialog() {
         <button className="preference-action" id="openDevicesFromSettings" type="button"><Headphones /><span><strong>Áudio e vídeo</strong><small>Câmera e microfone</small></span></button>
         <button className="preference-action install-action" id="installAppButton" type="button"><Download /><span><strong>Instalar aplicativo</strong><small id="installAppStatus">Verificando disponibilidade…</small></span></button>
       </div>
-      <div className="settings-version"><span className="version-dot" aria-hidden="true" />Mostra aí · Versão 1.18</div>
+      <div className="settings-version"><span className="version-dot" aria-hidden="true" />Mostra aí · Versão 1.19</div>
       <fieldset className="theme-settings" aria-labelledby="themeSettingsTitle">
         <legend id="themeSettingsTitle">Aparência</legend>
         <p>Escolha como o Mostra aí aparece neste dispositivo.</p>

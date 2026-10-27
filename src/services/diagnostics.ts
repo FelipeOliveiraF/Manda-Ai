@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 type Diagnostic = { at: string; type: string; message: string };
 const KEY = "mostra-diagnostics";
 const CONSENT_KEY = "mostra-diagnostics-consent";
-const APP_VERSION = "1.18";
+const APP_VERSION = "1.19";
 
 function sanitize(value: unknown) {
   return (value instanceof Error ? value.message : String(value || "Erro desconhecido"))

@@ -4,6 +4,7 @@ import { MembersDialog } from "./MembersDialog";
 import { RoomDialogs } from "./RoomDialogs";
 import { PreferencesDialog } from "./PreferencesDialog";
 import { ConnectionDialog } from "./ConnectionDialog";
+import { ChessDialog } from "./ChessDialog";
 
 export function ComplementarySurfaces() {
   return <>
@@ -13,6 +14,7 @@ export function ComplementarySurfaces() {
     <MembersDialog />
     <PreferencesDialog />
     <ConnectionDialog />
+    <ChessDialog />
     <div className="toast" id="toast" role="status" aria-live="polite" />
   </>;
 }

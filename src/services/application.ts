@@ -1,4 +1,5 @@
 import { Peer } from "peerjs";
+import { Chess } from "chess.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { GOOGLE_CLIENT_ID } from "./config";
 import { supabaseClient } from "./supabase";
@@ -10,6 +11,7 @@ import { coordinatorRecovery } from "./coordinatorRecovery";
 export interface ApplicationServices {
   supabase: SupabaseClient;
   Peer: typeof Peer;
+  Chess: typeof Chess;
   mediaDevices: MediaDevices;
   googleClientId: string;
   sounds: typeof callSounds;
@@ -24,6 +26,7 @@ export function createApplicationServices(): ApplicationServices {
   return {
     supabase: supabaseClient,
     Peer,
+    Chess,
     mediaDevices: navigator.mediaDevices,
     googleClientId: GOOGLE_CLIENT_ID,
     sounds: callSounds,

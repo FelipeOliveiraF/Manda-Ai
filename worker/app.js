@@ -86,6 +86,11 @@ export const appScript = String.raw`
   let unreadCounts = new Map();
   let roomInboxChannel = null;
   let touchGesture = null;
+  let chessGames = [];
+  let activeChessGame = null;
+  let chessChannel = null;
+  let chessEngine = null;
+  let selectedChessSquare = null;
 
   function notificationsMuted() { return Boolean(activeRoom && roomNotifications.get(activeRoom.id)); }
   function playCallSound(event) { if (!notificationsMuted()) services.sounds.play(event); }
@@ -876,7 +881,7 @@ export const appScript = String.raw`
     });
     roster.clear(); items.forEach(function (item) { roster.set(item.id, String(item.name || 'Amigo').slice(0, 60)); if (item.userId) peerUserIds.set(item.id,item.userId); }); renderRoster();
     rosterReady = true;
-    loadMemberProfiles();
+    loadMemberProfiles(); renderChessOpponents();
     if (outgoingStream().getTracks().length) roster.forEach(function (_, id) { callPeer(id); });
   }
   function broadcastRoster() {
@@ -1174,17 +1179,17 @@ export const appScript = String.raw`
     $('.room-layout').classList.remove('home-mode'); $('#emptyStage').classList.add('hidden'); $('#mediaStage').classList.remove('hidden'); $('#mediaControls').classList.remove('hidden');
     $('#roomTitle').textContent = room.name; $('#roomSubtitle').textContent = 'Sala ' + room.code; $('#chatRoomName').textContent = room.name;
     $('#participantCount').classList.remove('hidden'); $('#inviteButton').classList.remove('hidden'); $('#toggleChat').classList.remove('hidden');
-    $('#connectionDetailsButton').classList.remove('hidden'); $('#roomNotificationsButton').classList.remove('hidden'); updateRoomNotificationButton(); startCallQualityMonitor(); haptic(18);
+    $('#connectionDetailsButton').classList.remove('hidden'); $('#roomNotificationsButton').classList.remove('hidden'); $('#chessButton').classList.remove('hidden'); updateRoomNotificationButton(); startCallQualityMonitor(); haptic(18);
     $('#inviteButton').disabled = false; $('#messageInput').disabled = true; $('#sendMessage').disabled = true; $('#messageInput').placeholder = 'Carregando chats…';
     setMobileSidebar(false); setConnection('Conectando à sala…', false);
     if (!await loadRoomMembers()) return;
     await loadChannels();
     $('#messageInput').disabled = !activeChannel; $('#sendMessage').disabled = !activeChannel;
-    subscribeRoomControls(); await startPeerRoom(room);
+    subscribeRoomControls(); subscribeChess(); await Promise.all([startPeerRoom(room), loadChessGames()]);
   }
   function leaveActiveRoom() {
     if (activeRoom) playCallSound('leave');
-    cleanupPeer(); stopRoomControls();
+    cleanupPeer(); stopRoomControls(); stopChess();
     stopCallQualityMonitor();
     activeRoom = null; activeMembership = null; roomMembers.clear(); roomChannels = []; activeChannel = null; renderRooms(); resetChat(); renderChannels();
     $('#roomSettingsButton').classList.add('hidden'); $('#manageRoomButton').classList.add('hidden'); $('#roomIdentityButton').classList.add('hidden'); $('#clearChannel').classList.add('hidden'); $('#headerRoomAvatar').style.backgroundImage=''; $('#headerRoomAvatar').textContent='M';
@@ -1193,8 +1198,164 @@ export const appScript = String.raw`
     $('#emptyStage').classList.remove('hidden'); $('#mediaStage').classList.add('hidden'); $('#mediaControls').classList.add('hidden');
     $('#roomTitle').textContent = 'Início'; $('#roomSubtitle').textContent = 'Salas, convites e atalhos'; $('#chatRoomName').textContent = 'Selecione uma sala'; $('#activeChannelName').textContent = 'Conversa'; $('#participantCount').textContent = '0 online';
     $('#participantCount').classList.add('hidden'); $('#inviteButton').classList.add('hidden'); $('#toggleChat').classList.add('hidden');
-    $('#connectionDetailsButton').classList.add('hidden'); $('#roomNotificationsButton').classList.add('hidden'); $('#chatUnreadBadge').classList.add('hidden');
+    $('#connectionDetailsButton').classList.add('hidden'); $('#roomNotificationsButton').classList.add('hidden'); $('#chessButton').classList.add('hidden'); $('#chatUnreadBadge').classList.add('hidden'); $('#chessBadge').classList.add('hidden');
     $('#inviteButton').disabled = true; $('#messageInput').disabled = true; $('#sendMessage').disabled = true; $('#messageInput').placeholder = 'Escolha uma sala para conversar'; renderHome();
+  }
+
+  const CHESS_PIECES = { wp: '♙', wn: '♘', wb: '♗', wr: '♖', wq: '♕', wk: '♔', bp: '♟', bn: '♞', bb: '♝', br: '♜', bq: '♛', bk: '♚' };
+  function chessPlayerName(userId) {
+    return roomMembers.get(userId)?.display_name || memberProfiles.get(userId)?.display_name || (userId === currentUser?.id ? roomUserName() : 'Jogador');
+  }
+  function chessStatusLabel(game) {
+    if (game.status === 'pending' && new Date(game.expires_at).getTime() <= Date.now()) return 'Convite expirado';
+    if (game.status === 'pending') return game.opponent_id === currentUser.id ? chessPlayerName(game.challenger_id) + ' desafiou você' : 'Desafio enviado para ' + chessPlayerName(game.opponent_id);
+    if (game.status === 'active') return 'Partida em andamento';
+    if (game.status === 'draw') return 'Partida empatada';
+    if (game.status === 'declined') return 'Desafio recusado';
+    if (game.status === 'cancelled') return 'Desafio cancelado';
+    return chessPlayerName(game.winner_id) + ' venceu' + (game.result_reason ? ' · ' + game.result_reason : '');
+  }
+  function chessIsParticipant(game) { return Boolean(game && currentUser && [game.white_id, game.black_id].includes(currentUser.id)); }
+  function chessTurnUser(game) {
+    if (!game || game.status !== 'active') return null;
+    return String(game.fen).split(' ')[1] === 'w' ? game.white_id : game.black_id;
+  }
+  function updateChessBadge() {
+    const count = chessGames.filter(function (game) {
+      return (game.status === 'pending' && game.opponent_id === currentUser?.id && new Date(game.expires_at).getTime() > Date.now()) || (game.status === 'active' && chessTurnUser(game) === currentUser?.id);
+    }).length;
+    const badge = $('#chessBadge'); badge.textContent = count > 9 ? '9+' : String(count); badge.classList.toggle('hidden', !count);
+  }
+  function availableChessOpponents() {
+    const online = new Set(peerUserIds.values()); if (currentUser?.id) online.add(currentUser.id);
+    return Array.from(roomMembers.values()).filter(function (member) { return member.user_id !== currentUser?.id && online.has(member.user_id); }).sort(function (a, b) { return a.display_name.localeCompare(b.display_name, 'pt-BR'); });
+  }
+  function renderChessOpponents() {
+    const select = $('#chessOpponentSelect'); if (!select) return;
+    const previous = select.value; select.innerHTML = '<option value="">Escolha alguém online</option>';
+    availableChessOpponents().forEach(function (member) { const option = document.createElement('option'); option.value = member.user_id; option.textContent = member.display_name; select.appendChild(option); });
+    if (Array.from(select.options).some(function (option) { return option.value === previous; })) select.value = previous;
+    $('#chessChallengeButton').disabled = select.options.length < 2;
+    if (select.options.length < 2) $('#chessLobbyStatus').textContent = 'Quando outra pessoa entrar na chamada, ela aparecerá aqui para ser desafiada.';
+    else if ($('#chessLobbyStatus').textContent.startsWith('Quando outra')) $('#chessLobbyStatus').textContent = '';
+  }
+  function chessActionButton(label, className, handler) {
+    const button = document.createElement('button'); button.type = 'button'; button.className = className || 'secondary-button'; button.textContent = label; button.addEventListener('click', handler); return button;
+  }
+  function renderChessLobby() {
+    renderChessOpponents(); updateChessBadge();
+    const list = $('#chessGameList'); if (!list) return; list.textContent = '';
+    const relevant = chessGames.filter(function (game) { return game.status === 'active' || (game.status === 'pending' && new Date(game.expires_at).getTime() > Date.now()) || chessIsParticipant(game); }).slice(0, 12);
+    relevant.forEach(function (game) {
+      const card = document.createElement('article'); card.className = 'chess-game-card ' + game.status;
+      const icon = document.createElement('span'); icon.className = 'chess-card-icon'; icon.textContent = game.status === 'active' ? '♚' : '♞';
+      const copy = document.createElement('div'); copy.className = 'chess-card-copy';
+      const title = document.createElement('strong'); title.textContent = chessPlayerName(game.white_id) + ' × ' + chessPlayerName(game.black_id);
+      const status = document.createElement('small'); status.textContent = chessStatusLabel(game); copy.append(title, status);
+      const actions = document.createElement('div'); actions.className = 'chess-card-actions';
+      if (game.status === 'pending' && game.opponent_id === currentUser.id && new Date(game.expires_at).getTime() > Date.now()) {
+        actions.append(chessActionButton('Recusar', 'secondary-button', function () { respondChessChallenge(game.id, false); }), chessActionButton('Aceitar', 'primary-button', function () { respondChessChallenge(game.id, true); }));
+      } else if (game.status === 'pending' && game.challenger_id === currentUser.id && new Date(game.expires_at).getTime() > Date.now()) {
+        actions.append(chessActionButton('Cancelar', 'secondary-button', function () { cancelChessChallenge(game.id); }));
+      } else if (game.status === 'active') {
+        actions.append(chessActionButton(chessIsParticipant(game) ? 'Jogar' : 'Assistir', 'primary-button', function () { openChessGame(game.id); }));
+      } else if (chessIsParticipant(game)) {
+        actions.append(chessActionButton('Rever', 'secondary-button', function () { openChessGame(game.id); }));
+      }
+      card.append(icon, copy, actions); list.appendChild(card);
+    });
+    if (!relevant.length) list.innerHTML = '<div class="chess-empty"><span>♟</span><strong>Nenhuma partida ainda</strong><small>Escolha alguém online e inaugure o tabuleiro da sala.</small></div>';
+  }
+  async function loadChessGames() {
+    if (!activeRoom) return;
+    const roomId = activeRoom.id;
+    const result = await db.from('room_chess_games').select('*').eq('room_id', roomId).order('updated_at', { ascending: false }).limit(30);
+    if (result.error || !activeRoom || activeRoom.id !== roomId) { if (result.error) console.warn('Não foi possível carregar o xadrez.', result.error); return; }
+    chessGames = result.data || [];
+    if (activeChessGame) activeChessGame = chessGames.find(function (game) { return game.id === activeChessGame.id; }) || null;
+    renderChessLobby(); if (activeChessGame && !$('#chessGameView').classList.contains('hidden')) renderChessGame();
+  }
+  function stopChess() {
+    if (chessChannel) db.removeChannel(chessChannel); chessChannel = null; chessGames = []; activeChessGame = null; chessEngine = null; selectedChessSquare = null;
+    $('#chessBadge')?.classList.add('hidden'); $('#chessGameView')?.classList.add('hidden'); $('#chessLobby')?.classList.remove('hidden');
+  }
+  function subscribeChess() {
+    stopChess(); if (!activeRoom) return;
+    const roomId = activeRoom.id;
+    chessChannel = db.channel('room-chess-' + roomId).on('postgres_changes', { event: '*', schema: 'public', table: 'room_chess_games', filter: 'room_id=eq.' + roomId }, function (payload) {
+      const game = payload.new || {};
+      if (payload.eventType === 'INSERT' && game.opponent_id === currentUser?.id) { showRoomNotice(chessPlayerName(game.challenger_id) + ' desafiou você para uma partida de xadrez.', true); }
+      loadChessGames();
+    }).subscribe();
+  }
+  async function openChess() {
+    if (!activeRoom) return;
+    $('#chessLobby').classList.remove('hidden'); $('#chessGameView').classList.add('hidden'); $('#chessLobbyStatus').textContent = 'Atualizando partidas…';
+    openModal('chessModal'); await loadChessGames(); if ($('#chessLobbyStatus').textContent === 'Atualizando partidas…') $('#chessLobbyStatus').textContent = '';
+  }
+  async function createChessChallenge() {
+    const opponentId = $('#chessOpponentSelect').value; if (!activeRoom || !opponentId) { $('#chessLobbyStatus').textContent = 'Escolha alguém que esteja online.'; return; }
+    const button = $('#chessChallengeButton'); button.disabled = true; button.textContent = 'Enviando…';
+    const result = await db.rpc('create_chess_challenge', { p_room_id: activeRoom.id, p_opponent_id: opponentId });
+    button.textContent = 'Enviar desafio'; button.disabled = false;
+    if (result.error) { $('#chessLobbyStatus').textContent = result.error.message.includes('open chess game') ? 'Um dos jogadores já está em outra partida ou desafio.' : 'Não consegui enviar este desafio.'; return; }
+    $('#chessLobbyStatus').textContent = 'Desafio enviado para ' + chessPlayerName(opponentId) + '.'; showToast('Desafio de xadrez enviado.'); await loadChessGames();
+  }
+  async function respondChessChallenge(gameId, accept) {
+    const result = await db.rpc('respond_chess_challenge', { p_game_id: gameId, p_accept: accept });
+    if (result.error) { showToast('Este desafio não está mais disponível.'); await loadChessGames(); return; }
+    await loadChessGames(); if (accept) { showToast('Partida iniciada. Você joga com as pretas.'); openChessGame(gameId); } else showToast('Desafio recusado.');
+  }
+  async function cancelChessChallenge(gameId) {
+    const result = await db.rpc('cancel_chess_challenge', { p_game_id: gameId });
+    if (result.error) showToast('Não consegui cancelar este desafio.'); else showToast('Desafio cancelado.'); await loadChessGames();
+  }
+  function openChessGame(gameId) {
+    activeChessGame = chessGames.find(function (game) { return game.id === gameId; }) || null; if (!activeChessGame) return;
+    selectedChessSquare = null; $('#chessLobby').classList.add('hidden'); $('#chessGameView').classList.remove('hidden'); renderChessGame();
+  }
+  function renderChessGame() {
+    const game = activeChessGame; if (!game) return;
+    try { chessEngine = new services.Chess(game.fen); } catch (_) { $('#chessGameStatus').textContent = 'Não foi possível abrir o estado desta partida.'; return; }
+    $('#chessWhiteName').textContent = chessPlayerName(game.white_id); $('#chessBlackName').textContent = chessPlayerName(game.black_id);
+    const turnUser = chessTurnUser(game), turnText = game.status === 'active' ? (turnUser === currentUser.id ? 'Sua vez' : 'Vez de ' + chessPlayerName(turnUser)) : chessStatusLabel(game);
+    $('#chessGameStatus').textContent = turnText + (chessEngine.inCheck() && game.status === 'active' ? ' · Xeque!' : '');
+    $('#chessWhiteStatus').textContent = game.status === 'active' && turnUser === game.white_id ? 'Jogando agora' : game.status === 'active' ? 'Aguardando' : chessStatusLabel(game);
+    $('#chessBlackStatus').textContent = game.status === 'active' && turnUser === game.black_id ? 'Jogando agora' : game.status === 'active' ? 'Aguardando' : chessStatusLabel(game);
+    $('#chessWhitePlayer').classList.toggle('active', game.status === 'active' && turnUser === game.white_id); $('#chessBlackPlayer').classList.toggle('active', game.status === 'active' && turnUser === game.black_id);
+    $('#chessResignButton').classList.toggle('hidden', !chessIsParticipant(game) || game.status !== 'active'); $('#chessPromotionSelect').disabled = !chessIsParticipant(game) || game.status !== 'active';
+    renderChessBoard();
+  }
+  function renderChessBoard() {
+    const board = $('#chessBoard'); board.textContent = ''; if (!chessEngine || !activeChessGame) return;
+    const flipped = activeChessGame.black_id === currentUser?.id, files = flipped ? ['h','g','f','e','d','c','b','a'] : ['a','b','c','d','e','f','g','h'], ranks = flipped ? [1,2,3,4,5,6,7,8] : [8,7,6,5,4,3,2,1];
+    ranks.forEach(function (rank, row) { files.forEach(function (file, column) {
+      const squareName = file + rank, piece = chessEngine.get(squareName), square = document.createElement('button'); square.type = 'button'; square.className = 'chess-square ' + ((file.charCodeAt(0) - 97 + rank) % 2 ? 'light' : 'dark'); square.dataset.square = squareName; square.setAttribute('role', 'gridcell'); square.setAttribute('aria-label', squareName + (piece ? ' ' + CHESS_PIECES[piece.color + piece.type] : ' vazio'));
+      if (piece) { const symbol = document.createElement('span'); symbol.textContent = CHESS_PIECES[piece.color + piece.type]; symbol.className = 'chess-piece ' + (piece.color === 'w' ? 'white' : 'black'); square.appendChild(symbol); }
+      if (selectedChessSquare === squareName) square.classList.add('selected');
+      if (selectedChessSquare && chessEngine.moves({ square: selectedChessSquare, verbose: true }).some(function (move) { return move.to === squareName; })) square.classList.add('legal');
+      if ((row === 7)) { const fileLabel = document.createElement('small'); fileLabel.className = 'chess-file'; fileLabel.textContent = file; square.appendChild(fileLabel); }
+      if (column === 0) { const rankLabel = document.createElement('small'); rankLabel.className = 'chess-rank'; rankLabel.textContent = String(rank); square.appendChild(rankLabel); }
+      square.addEventListener('click', function () { selectChessSquare(squareName); }); board.appendChild(square);
+    }); });
+  }
+  async function selectChessSquare(squareName) {
+    const game = activeChessGame; if (!game || game.status !== 'active' || chessTurnUser(game) !== currentUser.id || !chessIsParticipant(game)) return;
+    const ownColor = currentUser.id === game.white_id ? 'w' : 'b', piece = chessEngine.get(squareName);
+    if (!selectedChessSquare) { if (piece?.color !== ownColor) return; selectedChessSquare = squareName; renderChessBoard(); return; }
+    if (piece?.color === ownColor) { selectedChessSquare = squareName; renderChessBoard(); return; }
+    const from = selectedChessSquare; selectedChessSquare = null; let move;
+    try { move = chessEngine.move({ from: from, to: squareName, promotion: $('#chessPromotionSelect').value || 'q' }); } catch (_) { move = null; }
+    if (!move) { renderChessBoard(); return; }
+    renderChessBoard(); $('#chessGameStatus').textContent = 'Salvando jogada…';
+    const outcome = chessEngine.isCheckmate() ? (ownColor === 'w' ? 'white_won' : 'black_won') : chessEngine.isDraw() ? 'draw' : 'active';
+    const result = await db.rpc('make_chess_move', { p_game_id: game.id, p_from: from, p_to: squareName, p_promotion: move.promotion || '', p_fen: chessEngine.fen(), p_pgn: chessEngine.pgn(), p_san: move.san, p_expected_move_number: game.move_number, p_outcome: outcome });
+    if (result.error) { showToast('A partida mudou. Atualizando o tabuleiro…'); await loadChessGames(); return; }
+    haptic(12); await loadChessGames();
+  }
+  async function resignChessGame() {
+    if (!activeChessGame || !confirm('Deseja desistir desta partida? Seu oponente será declarado vencedor.')) return;
+    const result = await db.rpc('resign_chess_game', { p_game_id: activeChessGame.id }); if (result.error) showToast('Não consegui encerrar a partida.'); else showToast('Partida encerrada.'); await loadChessGames();
   }
 
   function syncPreferences() {
@@ -1234,7 +1395,7 @@ export const appScript = String.raw`
     if (pendingInvite) await loadInvitePreview();
   }
   async function bootSignedOut() {
-    currentUser = null; ownProfile=null; stopPreviews(); stopPrejoin(); stopRoomControls(); stopCallQualityMonitor(); if (roomInboxChannel) db.removeChannel(roomInboxChannel); roomInboxChannel = null; resetChat(); document.querySelectorAll('.modal-backdrop').forEach(m=>m.classList.add('hidden')); cleanupPeer(); activeRoom = null; $('#app').classList.add('hidden'); $('#authScreen').classList.remove('hidden'); await loadInvitePreview(); await initGoogleButton();
+    currentUser = null; ownProfile=null; stopPreviews(); stopPrejoin(); stopRoomControls(); stopChess(); stopCallQualityMonitor(); if (roomInboxChannel) db.removeChannel(roomInboxChannel); roomInboxChannel = null; resetChat(); document.querySelectorAll('.modal-backdrop').forEach(m=>m.classList.add('hidden')); cleanupPeer(); activeRoom = null; $('#app').classList.add('hidden'); $('#authScreen').classList.remove('hidden'); await loadInvitePreview(); await initGoogleButton();
   }
   function handleSession(session) {
     const user = session && session.user;
@@ -1296,6 +1457,10 @@ export const appScript = String.raw`
   $('#connectionDetailsButton').addEventListener('click', function () { collectCallQuality(); openModal('connectionDetailsModal'); });
   $('#retryConnection').addEventListener('click', retryConnectionNow);
   $('#roomNotificationsButton').addEventListener('click', toggleRoomNotifications);
+  $('#chessButton').addEventListener('click', openChess);
+  $('#chessChallengeButton').addEventListener('click', createChessChallenge);
+  $('#chessBackToLobby').addEventListener('click', function () { activeChessGame = null; selectedChessSquare = null; $('#chessGameView').classList.add('hidden'); $('#chessLobby').classList.remove('hidden'); renderChessLobby(); });
+  $('#chessResignButton').addEventListener('click', resignChessGame);
   $('#screenQualitySelect').value = localStorage.getItem(SCREEN_QUALITY_KEY) || 'auto';
   $('#screenQualitySelect').addEventListener('change', function () { localStorage.setItem(SCREEN_QUALITY_KEY, $('#screenQualitySelect').value); showToast('Qualidade do compartilhamento salva.'); });
   window.addEventListener('keydown', function (event) {
@@ -1314,7 +1479,7 @@ export const appScript = String.raw`
   $('#prejoinName').addEventListener('input', function () { setAvatar($('#prejoinAvatar'), $('#prejoinName').value || userName(), avatarUrl()); });
   $('#prejoinMicSelect').addEventListener('change', async function () { if (prejoinStream?.getAudioTracks().length) { await togglePrejoinMedia('mic'); await togglePrejoinMedia('mic'); } });
   $('#prejoinCameraSelect').addEventListener('change', async function () { if (prejoinStream?.getVideoTracks().length) { await togglePrejoinMedia('camera'); await togglePrejoinMedia('camera'); } });
-  window.addEventListener('beforeunload', function () { stopPreviews(); stopPrejoin(); leaving = true; stopMedia(); peer?.destroy(); });
+  window.addEventListener('beforeunload', function () { stopPreviews(); stopPrejoin(); stopChess(); leaving = true; stopMedia(); peer?.destroy(); });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(function () {});
 
 
