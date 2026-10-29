@@ -1,4 +1,4 @@
-const APP_VERSION = '1.19';
+const APP_VERSION = '1.20';
 
 export const page = `<!doctype html>
 <html lang="pt-BR">

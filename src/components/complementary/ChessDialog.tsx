@@ -4,8 +4,8 @@ import { CloseButton, SettingsHeading } from "./DialogParts";
 const previewPieces: Record<string, string> = {
   a8: "♜", b8: "♞", c8: "♝", d8: "♛", e8: "♚", f8: "♝", g8: "♞", h8: "♜",
   a7: "♟", b7: "♟", c7: "♟", d7: "♟", e7: "♟", f7: "♟", g7: "♟", h7: "♟",
-  a2: "♙", b2: "♙", c2: "♙", d2: "♙", e2: "♙", f2: "♙", g2: "♙", h2: "♙",
-  a1: "♖", b1: "♘", c1: "♗", d1: "♕", e1: "♔", f1: "♗", g1: "♘", h1: "♖",
+  a2: "♟", b2: "♟", c2: "♟", d2: "♟", e2: "♟", f2: "♟", g2: "♟", h2: "♟",
+  a1: "♜", b1: "♞", c1: "♝", d1: "♛", e1: "♚", f1: "♝", g1: "♞", h1: "♜",
 };
 
 function PreviewBoard() {
@@ -43,12 +43,14 @@ export function ChessDialog() {
 
       <section className="chess-game-view hidden" id="chessGameView">
         <button className="chess-back" id="chessBackToLobby" type="button"><ArrowLeft /> Partidas da sala</button>
-        <div className="chess-player chess-player-black" id="chessBlackPlayer"><span className="chess-player-piece">♚</span><div><strong id="chessBlackName">Pretas</strong><small id="chessBlackStatus">Aguardando</small></div></div>
+        <div className="chess-player chess-player-black" id="chessBlackPlayer"><span className="chess-player-piece">♚</span><div className="chess-player-copy"><span className="chess-player-color">Pretas</span><strong id="chessBlackName">Pretas</strong><small id="chessBlackStatus">Aguardando</small></div><span className="chess-turn-light" aria-hidden="true" /></div>
         <div className="chess-board-wrap"><div className="chess-board" id="chessBoard" role="grid" aria-label="Tabuleiro de xadrez"><PreviewBoard /></div></div>
-        <div className="chess-player chess-player-white" id="chessWhitePlayer"><span className="chess-player-piece">♔</span><div><strong id="chessWhiteName">Brancas</strong><small id="chessWhiteStatus">Aguardando</small></div></div>
+        <div className="chess-player chess-player-white" id="chessWhitePlayer"><span className="chess-player-piece">♚</span><div className="chess-player-copy"><span className="chess-player-color">Brancas</span><strong id="chessWhiteName">Brancas</strong><small id="chessWhiteStatus">Aguardando</small></div><span className="chess-turn-light" aria-hidden="true" /></div>
         <div className="chess-game-footer">
-          <p id="chessGameStatus" role="status">Carregando partida…</p>
-          <label htmlFor="chessPromotionSelect">Promoção<select id="chessPromotionSelect" defaultValue="q"><option value="q">Dama</option><option value="r">Torre</option><option value="b">Bispo</option><option value="n">Cavalo</option></select></label>
+          <div className="chess-live-label"><span /> PARTIDA DA SALA</div>
+          <div className="chess-status-card"><small>Estado da partida</small><p id="chessGameStatus" role="status">Carregando partida…</p></div>
+          <p className="chess-move-hint">Selecione uma peça e depois a casa de destino.</p>
+          <label htmlFor="chessPromotionSelect"><span>Promover peão para</span><select id="chessPromotionSelect" defaultValue="q"><option value="q">Dama</option><option value="r">Torre</option><option value="b">Bispo</option><option value="n">Cavalo</option></select></label>
           <button className="secondary-button chess-resign" id="chessResignButton" type="button"><Flag /> Desistir</button>
         </div>
       </section>

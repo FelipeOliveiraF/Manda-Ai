@@ -9,7 +9,7 @@ const root=resolve(fileURLToPath(new URL('..',import.meta.url)));
 const componentRoot=resolve(root,'src/components');
 const componentFiles=(await readdir(componentRoot,{recursive:true})).filter(file=>file.endsWith('.tsx'));
 const componentSource=(await Promise.all(componentFiles.map(file=>readFile(resolve(componentRoot,file),'utf8')))).join('\n');
-assert.match(page,/Versão 1\.19/);
+assert.match(page,/Versão 1\.20/);
 assert.match(appScript,/deleteMessage/);
 assert.match(appScript,/memberSummary/);
 assert.match(appScript,/members-tab/);

@@ -1202,7 +1202,7 @@ export const appScript = String.raw`
     $('#inviteButton').disabled = true; $('#messageInput').disabled = true; $('#sendMessage').disabled = true; $('#messageInput').placeholder = 'Escolha uma sala para conversar'; renderHome();
   }
 
-  const CHESS_PIECES = { wp: '♙', wn: '♘', wb: '♗', wr: '♖', wq: '♕', wk: '♔', bp: '♟', bn: '♞', bb: '♝', br: '♜', bq: '♛', bk: '♚' };
+  const CHESS_PIECES = { wp: '♟', wn: '♞', wb: '♝', wr: '♜', wq: '♛', wk: '♚', bp: '♟', bn: '♞', bb: '♝', br: '♜', bq: '♛', bk: '♚' };
   function chessPlayerName(userId) {
     return roomMembers.get(userId)?.display_name || memberProfiles.get(userId)?.display_name || (userId === currentUser?.id ? roomUserName() : 'Jogador');
   }

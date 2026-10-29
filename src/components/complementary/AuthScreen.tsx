@@ -32,7 +32,7 @@ export function AuthScreen() {
             <button className="text-button hidden" id="retryStartup" type="button" onClick={() => location.reload()}>Tentar novamente</button>
           </div>
           <p className="auth-legal">Ao entrar, você concorda com os <a href="/terms">Termos</a> e a <a href="/privacy">Privacidade</a>.</p>
-          <span className="version-badge">Versão 1.19</span>
+          <span className="version-badge">Versão 1.20</span>
         </div>
       </div>
     </section>
